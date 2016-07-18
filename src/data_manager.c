@@ -3157,6 +3157,7 @@ dm_validate_procedure(dm_ctx_t *dm_ctx, dm_session_t *session, dm_procedure_t ty
     char *module_name = NULL;
     char *procedure_name = NULL;
     int validation_options = 0;
+    char *last_delim = NULL;
     int ret = 0, rc = SR_ERR_OK;
 
     args = *args_p;
@@ -3184,12 +3185,38 @@ dm_validate_procedure(dm_ctx_t *dm_ctx, dm_session_t *session, dm_procedure_t ty
         CHECK_RC_MSG_RETURN(rc, "dm_get_module failed");
     }
 
+    /* test for the presence of the procedure in the schema tree */
     pthread_rwlock_rdlock(&dm_ctx->lyctx_lock);
     data_tree = lyd_new_path(NULL, dm_ctx->ly_ctx, xpath, NULL, 0);
     if (NULL == data_tree) {
         SR_LOG_ERR("%s xpath validation failed ('%s'): %s", procedure_name, xpath, ly_errmsg());
         pthread_rwlock_unlock(&dm_ctx->lyctx_lock);
         return dm_report_error(session, ly_errmsg(), xpath, SR_ERR_BAD_ELEMENT);
+    }
+
+    /* test for the presence of the procedure in the data tree */
+    if (type == DM_PROCEDURE_EVENT_NOTIF || type == DM_PROCEDURE_ACTION) {
+        last_delim = strrchr(xpath, '/');
+        if (NULL == last_delim) {
+            /* shouldn't really happen */
+            SR_LOG_ERR("%s xpath validation failed ('%s'): %s", procedure_name, xpath, ly_errmsg());
+            pthread_rwlock_unlock(&dm_ctx->lyctx_lock);
+            return dm_report_error(session, ly_errmsg(), xpath, SR_ERR_BAD_ELEMENT);
+        }
+        if (last_delim > xpath) {
+            tmp_xpath = calloc(last_delim - xpath + 1, sizeof(*tmp_xpath));
+            strncat(tmp_xpath, xpath, last_delim - xpath);
+            ly_nodes = lyd_get_node(data_tree, tmp_xpath);
+            free(tmp_xpath);
+            if (0 == ly_nodes->number) {
+                SR_LOG_ERR("%s xpath validation failed ('%s'): the target node is not present in the data tree.",
+                        procedure_name, xpath);
+                ly_set_free(ly_nodes);
+                pthread_rwlock_unlock(&dm_ctx->lyctx_lock);
+                return dm_report_error(session, ly_errmsg(), xpath, SR_ERR_BAD_ELEMENT);
+            }
+            ly_set_free(ly_nodes);
+        }
     }
 
     for (size_t i = 0; i < arg_cnt; i++) {
@@ -3283,6 +3310,13 @@ dm_validate_event_notif(dm_ctx_t *dm_ctx, dm_session_t *session, const char *eve
 {
     return dm_validate_procedure(dm_ctx, session, DM_PROCEDURE_EVENT_NOTIF, event_notif_xpath,
             values, values_cnt, true);
+}
+
+int
+dm_validate_action(dm_ctx_t *dm_ctx, dm_session_t *session, const char *action_xpath, sr_val_t **args, size_t *arg_cnt,
+        bool input)
+{
+    return dm_validate_procedure(dm_ctx, session, DM_PROCEDURE_ACTION, action_xpath, args, arg_cnt, input);
 }
 
 struct ly_set *

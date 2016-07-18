@@ -608,6 +608,99 @@ dm_event_notif_test(void **state)
     dm_cleanup(ctx);
 }
 
+void
+dm_action_test(void **state)
+{
+    int rc = SR_ERR_OK;
+    dm_ctx_t *ctx = NULL;
+    dm_session_t *session = NULL;
+    sr_val_t *input = NULL, *output = NULL;
+    const struct lys_module *module = NULL;
+    size_t input_cnt = 0, output_cnt = 0;
+
+    rc = dm_init(NULL, NULL, NULL, CM_MODE_LOCAL, TEST_SCHEMA_SEARCH_DIR, TEST_DATA_SEARCH_DIR, &ctx);
+    assert_int_equal(SR_ERR_OK, rc);
+
+    rc = dm_session_start(ctx, NULL, SR_DS_STARTUP, &session);
+    assert_int_equal(SR_ERR_OK, rc);
+
+    /* load test-module */
+    rc = dm_get_module(ctx, "test-module", NULL, &module);
+    assert_int_equal(SR_ERR_OK, rc);
+
+    /* non-existing action in the schema tree */
+    rc = dm_validate_action(ctx, session, "/test-module:non-existing-action",
+            &input, &input_cnt, true);
+    assert_int_equal(SR_ERR_BAD_ELEMENT, rc);
+
+    /* action input */
+    input_cnt = 1;
+    input = calloc(input_cnt, sizeof(*input));
+    input[0].xpath = strdup("/test-module:kernel-modules/kernel-module[name=\"irqbypass.ko\"]/load/params");
+    input[0].type = SR_STRING_T;
+    input[0].data.string_val = strdup("--log-level 2");
+
+    rc = dm_validate_action(ctx, session, "/test-module:kernel-modules/kernel-module[name=\"irqbypass.ko\"]/load",
+            &input, &input_cnt, true);
+    assert_int_equal(SR_ERR_OK, rc);
+    assert_int_equal(input_cnt, 3); /* including default leafs */
+    assert_string_equal("/test-module:kernel-modules/kernel-module[name=\"irqbypass.ko\"]/load/params", input[0].xpath);
+    assert_int_equal(SR_STRING_T, input[0].type);
+    assert_string_equal("--log-level 2", input[0].data.string_val);
+    assert_string_equal("/test-module:kernel-modules/kernel-module[name=\"irqbypass.ko\"]/load/force", input[1].xpath);
+    assert_int_equal(SR_BOOL_T, input[1].type);
+    assert_false(input[1].data.bool_val);
+    assert_string_equal("/test-module:kernel-modules/kernel-module[name=\"irqbypass.ko\"]/load/dry-run", input[2].xpath);
+    assert_int_equal(SR_BOOL_T, input[2].type);
+    assert_false(input[2].data.bool_val);
+
+    /* non-existing location of the Action in the data tree */
+    rc = dm_validate_action(ctx, session, "/test-module:kernel-modules/kernel-module[name=\"non-existent-module\"]/load",
+            &input, &input_cnt, true);
+    assert_int_equal(SR_ERR_BAD_ELEMENT, rc);
+
+    /* invalid action input */
+    input[2].type = SR_UINT16_T;
+    input[2].data.uint16_val = 1;
+    rc = dm_validate_action(ctx, session, "/test-module:kernel-modules/kernel-module[name=\"irqbypass.ko\"]/load",
+            &input, &input_cnt, true);
+    assert_int_equal(SR_ERR_VALIDATION_FAILED, rc);
+
+    /* action output */
+    output_cnt = 3;
+    output = calloc(output_cnt, sizeof(*output));
+    output[0].xpath = strdup("/test-module:kernel-modules/kernel-module[name=\"vboxvideo.ko\"]/get-dependencies/dependency");
+    output[0].type = SR_STRING_T;
+    output[0].data.string_val = strdup("drm");
+    output[1].xpath = strdup("/test-module:kernel-modules/kernel-module[name=\"vboxvideo.ko\"]/get-dependencies/dependency");
+    output[1].type = SR_STRING_T;
+    output[1].data.string_val = strdup("drm_kms_helper");
+    output[2].xpath = strdup("/test-module:kernel-modules/kernel-module[name=\"vboxvideo.ko\"]/get-dependencies/dependency");
+    output[2].type = SR_STRING_T;
+    output[2].data.string_val = strdup("ttm");
+
+    rc = dm_validate_action(ctx, session, "/test-module:kernel-modules/kernel-module[name=\"vboxvideo.ko\"]/get-dependencies",
+            &output, &output_cnt, false);
+    assert_int_equal(SR_ERR_OK, rc);
+    assert_int_equal(output_cnt, 3);
+
+    /* invalid action output */
+    free(output[2].xpath);
+    free(output[2].data.string_val);
+    output[2].xpath = strdup("/test-module:kernel-modules/kernel-module[name=\"vboxvideo.ko\"]/get-dependencies/return-code");
+    output[2].type = SR_UINT8_T;
+    output[2].data.uint8_val = 0;
+    rc = dm_validate_action(ctx, session, "/test-module:kernel-modules/kernel-module[name=\"vboxvideo.ko\"]/get-dependencies",
+            &output, &output_cnt, false);
+    assert_int_equal(SR_ERR_BAD_ELEMENT, rc);
+
+    sr_free_values(input, input_cnt);
+    sr_free_values(output, output_cnt);
+
+    dm_session_stop(ctx, session);
+    dm_cleanup(ctx);
+}
+
 int main(){
     sr_log_stderr(SR_LL_DBG);
 
@@ -624,7 +717,8 @@ int main(){
             cmocka_unit_test(dm_copy_module_test),
             cmocka_unit_test(dm_rpc_test),
             cmocka_unit_test(dm_state_data_test),
-            cmocka_unit_test(dm_event_notif_test)
+            cmocka_unit_test(dm_event_notif_test),
+            cmocka_unit_test(dm_action_test)
     };
     return cmocka_run_group_tests(tests, setup, NULL);
 }

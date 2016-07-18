@@ -205,6 +205,44 @@ createDataTreeTestModule()
     n = lyd_new_leaf(node, module, "C", "final-leaf");
     assert_non_null(n);
 
+    /* kernel-modules (actions + notifications inside of the data tree) */
+    node = lyd_new(NULL, module, "kernel-modules");
+    assert_non_null(node);
+    assert_int_equal(0, lyd_insert_after(r, node));
+
+    node = lyd_new(node, module, "kernel-module");
+    assert_non_null(node);
+    n = lyd_new_leaf(node, module, "name", "netlink_diag.ko");
+    assert_non_null(n);
+    n = lyd_new_leaf(node, module, "location", "/lib/modules/kernel/net/netlink");
+    assert_non_null(n);
+    n = lyd_new_leaf(node, module, "loaded", "false");
+    assert_non_null(n);
+
+    node = node->parent;
+    assert_non_null(node);
+
+    node = lyd_new(node, module, "kernel-module");
+    assert_non_null(node);
+    n = lyd_new_leaf(node, module, "name", "irqbypass.ko");
+    assert_non_null(n);
+    n = lyd_new_leaf(node, module, "location", "/lib/modules/kernel/virt/lib");
+    assert_non_null(n);
+    n = lyd_new_leaf(node, module, "loaded", "false");
+    assert_non_null(n);
+
+    node = node->parent;
+    assert_non_null(node);
+
+    node = lyd_new(node, module, "kernel-module");
+    assert_non_null(node);
+    n = lyd_new_leaf(node, module, "name", "vboxvideo.ko");
+    assert_non_null(n);
+    n = lyd_new_leaf(node, module, "location", "/lib/modules/kernel/misc");
+    assert_non_null(n);
+    n = lyd_new_leaf(node, module, "loaded", "false");
+    assert_non_null(n);
+
     /* validate & save */
     assert_int_equal(0, lyd_validate(&r, LYD_OPT_STRICT | LYD_OPT_CONFIG));
     assert_int_equal(SR_ERR_OK, sr_save_data_tree_file(TEST_MODULE_DATA_FILE_NAME, r));

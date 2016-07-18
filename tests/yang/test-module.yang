@@ -326,7 +326,7 @@ module test-module {
     }
   }
 
- grouping link {
+  grouping link {
     container source {
       leaf address {
         type inet:ipv4-address;
@@ -347,14 +347,73 @@ module test-module {
       type uint16;
       default 1500;
     }
- }
+  }
 
- notification link-discovered {
-   uses link;
- }
-
- notification link-removed {
+  notification link-discovered {
     uses link;
- }
+  }
+
+  notification link-removed {
+    uses link;
+  }
+
+  container kernel-modules {
+    list kernel-module {
+      key "name";
+
+      leaf name {
+        type string;
+      }
+
+      leaf location {
+        type string;
+        default "/lib/modules";
+      }
+
+      leaf loaded {
+        type boolean;
+      }
+
+      action load {
+        input {
+          leaf params {
+            mandatory "true";
+            type string;
+          }
+          leaf force {
+            type boolean;
+            default "false";
+          }
+          leaf dry-run {
+            type boolean;
+            default false;
+          }
+        }
+        output {
+          leaf return-code {
+            type uint8;
+          }
+        }
+      }
+
+      action get-dependencies {
+        input {}
+        output {
+          leaf-list dependency {
+            type string;
+          }
+        }
+      }
+
+      notification status-change {
+        leaf loaded {
+          type boolean;
+        }
+        leaf time-of-change {
+          type uint32;
+        }
+      }
+    }
+  }
 
 }

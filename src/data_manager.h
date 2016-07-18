@@ -670,6 +670,18 @@ int dm_validate_rpc(dm_ctx_t *dm_ctx, dm_session_t *session, const char *rpc_xpa
 int dm_validate_event_notif(dm_ctx_t *dm_ctx, dm_session_t *session, const char *notif_xpath, sr_val_t **values, size_t *values_cnt);
 
 /**
+ * @brief Validates content of an Action request or reply.
+ * @param [in] dm_ctx DM context.
+ * @param [in] session DM session.
+ * @param [in] action_xpath XPath of the Action.
+ * @param [in] args Input/output arguments of the Action (can be changed inside of the function).
+ * @param [in] arg_cnt Number of input/output arguments provided (can be changed inside of the function).
+ * @param [in] input TRUE if input arguments were provided, FALSE if output.
+ * @return Error code (SR_ERR_OK on success)
+ */
+int dm_validate_action(dm_ctx_t *dm_ctx, dm_session_t *session, const char *action_xpath, sr_val_t **args, size_t *arg_cnt, bool input);
+
+/**
  * @brief Locks lyctx_lock and call lyd_get_node.
  * @param [in] dm_ctx
  * @param [in] data
