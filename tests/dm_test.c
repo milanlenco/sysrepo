@@ -602,8 +602,36 @@ dm_event_notif_test(void **state)
     rc = dm_validate_event_notif(ctx, session, "/test-module:link-removed", &values, &values_cnt);
     assert_int_equal(SR_ERR_BAD_ELEMENT, rc);
 
+    /* notification nested in the data tree (YANG 1.1) */
     sr_free_values(values, values_cnt);
+    values_cnt = 2;
+    values = calloc(values_cnt, sizeof(*values));
+    values[0].xpath = strdup("/test-module:kernel-modules/kernel-module[name=\"irqbypass.ko\"]/status-change/loaded");
+    values[0].type = SR_BOOL_T;
+    values[0].data.bool_val = true;
+    values[1].xpath = strdup("/test-module:kernel-modules/kernel-module[name=\"irqbypass.ko\"]/status-change/time-of-change");
+    values[1].type = SR_UINT32_T;
+    values[1].data.int32_val = 1468827615;
+    rc = dm_validate_action(ctx, session, "/test-module:kernel-modules/kernel-module[name=\"irqbypass.ko\"]/status-change",
+            &values, &values_cnt, true);
+    assert_int_equal(SR_ERR_OK, rc);
+    assert_int_equal(values_cnt, 2);
 
+    /* (nested) notification not present in the data tree */
+    sr_free_values(values, values_cnt);
+    values_cnt = 2;
+    values = calloc(values_cnt, sizeof(*values));
+    values[0].xpath = strdup("/test-module:kernel-modules/kernel-module[name=\"non-existent-module\"]/status-change/loaded");
+    values[0].type = SR_BOOL_T;
+    values[0].data.bool_val = true;
+    values[1].xpath = strdup("/test-module:kernel-modules/kernel-module[name=\"non-existent-module\"]/status-change/time-of-change");
+    values[1].type = SR_UINT32_T;
+    values[1].data.int32_val = 1468827615;
+    rc = dm_validate_action(ctx, session, "/test-module:kernel-modules/kernel-module[name=\"non-existent-module\"]/status-change",
+            &values, &values_cnt, true);
+    assert_int_equal(SR_ERR_BAD_ELEMENT, rc);
+
+    sr_free_values(values, values_cnt);
     dm_session_stop(ctx, session);
     dm_cleanup(ctx);
 }
