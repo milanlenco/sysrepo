@@ -1169,6 +1169,62 @@ int sr_rpc_subscribe(sr_session_ctx_t *session, const char *xpath, sr_rpc_cb cal
 int sr_rpc_send(sr_session_ctx_t *session, const char *xpath,
         const sr_val_t *input,  const size_t input_cnt, sr_val_t **output, size_t *output_cnt);
 
+////////////////////////////////////////////////////////////////////////////////
+// Action API
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * @brief Callback to be called by the delivery of Action (operation connected to a specific data node)
+ * specified by xpath. Subscribe to it by ::sr_action_subscribe call.
+ *
+ * @param[in] xpath XPath identifying the Action.
+ * @param[in] input Array of input parameters.
+ * @param[in] input_cnt Number of input parameters.
+ * @param[out] output Array of output parameters. Should be allocated on heap,
+ * will be freed by sysrepo after sending of the Action response.
+ * @param[out] output_cnt Number of output parameters.
+ * @param[in] private_ctx Private context opaque to sysrepo, as passed to ::sr_action_subscribe call.
+ *
+ * @return Error code (SR_ERR_OK on success).
+ */
+typedef int (*sr_action_cb)(const char *xpath, const sr_val_t *input, const size_t input_cnt,
+        sr_val_t **output, size_t *output_cnt, void *private_ctx);
+
+/**
+ * @brief Subscribes for delivery of Action specified by xpath.
+ *
+ * @param[in] session Session context acquired with ::sr_session_start call.
+ * @param[in] xpath XPath identifying the Action.
+ * @param[in] callback Callback to be called when the Action is called.
+ * @param[in] private_ctx Private context passed to the callback function, opaque to sysrepo.
+ * @param[in] opts Options overriding default behavior of the subscription, it is supposed to be
+ * a bitwise OR-ed value of any ::sr_subscr_flag_t flags.
+ * @param[in,out] subscription Subscription context that is supposed to be released by ::sr_unsubscribe.
+ * @note An existing context may be passed in case that SR_SUBSCR_CTX_REUSE option is specified.
+ *
+ * @return Error code (SR_ERR_OK on success).
+ */
+int sr_action_subscribe(sr_session_ctx_t *session, const char *xpath, sr_action_cb callback, void *private_ctx,
+        sr_subscr_options_t opts, sr_subscription_ctx_t **subscription);
+
+/**
+ * @brief Executes an action specified by xpath and waits for the result.
+ *
+ * @param[in] session Session context acquired with ::sr_session_start call.
+ * @param[in] xpath XPath identifying the Action.
+ * @param[in] input Array of input parameters (array of all nodes that hold some
+ * data in Action input subtree - same as ::sr_get_items would return).
+ * @param[in] input_cnt Number of input parameters.
+ * @param[out] output Array of output parameters (all nodes that hold some data
+ * in Action output subtree). Will be allocated by sysrepo and should be freed by
+ * caller using ::sr_free_values.
+ * @param[out] output_cnt Number of output parameters.
+ *
+ * @return Error code (SR_ERR_OK on success).
+ */
+int sr_action_send(sr_session_ctx_t *session, const char *xpath,
+        const sr_val_t *input,  const size_t input_cnt, sr_val_t **output, size_t *output_cnt);
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Operational Data API - EXPERIMENTAL (work in progress) !!!
