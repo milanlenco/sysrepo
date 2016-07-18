@@ -1572,6 +1572,146 @@ cl_rpc_test(void **state)
     assert_int_equal(rc, SR_ERR_OK);
 }
 
+static int
+test_action_cb1(const char *xpath, const sr_val_t *input, const size_t input_cnt,
+        sr_val_t **output, size_t *output_cnt, void *private_ctx)
+{
+    int *callback_called = (int*)private_ctx;
+    *callback_called += 1;
+
+    assert_string_equal("/test-module:kernel-modules/kernel-module[name='netlink_diag.ko']/load", xpath);
+
+    assert_int_equal(input_cnt, 3);
+    assert_string_equal("/test-module:kernel-modules/kernel-module[name='netlink_diag.ko']/load/params", input[0].xpath);
+    assert_int_equal(SR_STRING_T, input[0].type);
+    assert_string_equal("", input[0].data.string_val);
+    assert_string_equal("/test-module:kernel-modules/kernel-module[name='netlink_diag.ko']/load/force", input[1].xpath);
+    assert_int_equal(SR_BOOL_T, input[1].type);
+    assert_true(input[1].data.bool_val);
+    assert_string_equal("/test-module:kernel-modules/kernel-module[name='netlink_diag.ko']/load/dry-run", input[2].xpath);
+    assert_int_equal(SR_BOOL_T, input[2].type);
+    assert_false(input[2].data.bool_val);
+
+    *output = calloc(1, sizeof(**output));
+    (*output)[0].xpath = strdup("/test-module:kernel-modules/kernel-module[name='netlink_diag.ko']/load/return-code");
+    (*output)[0].type = SR_UINT8_T;
+    (*output)[0].data.int8_val = 0;
+    *output_cnt = 1;
+
+    return SR_ERR_OK;
+}
+
+static int
+test_action_cb2(const char *xpath, const sr_val_t *input, const size_t input_cnt,
+        sr_val_t **output, size_t *output_cnt, void *private_ctx)
+{
+    int *callback_called = (int*)private_ctx;
+    *callback_called += 1;
+
+    assert_string_equal("/test-module:kernel-modules/kernel-module[name='vboxvideo.ko']/get-dependencies", xpath);
+
+    assert_int_equal(input_cnt, 0);
+
+    *output = calloc(3, sizeof(**output));
+    (*output)[0].xpath = strdup("/test-module:kernel-modules/kernel-module[name='vboxvideo.ko']/get-dependencies/dependency");
+    (*output)[0].type = SR_STRING_T;
+    (*output)[0].data.string_val = strdup("drm");
+    (*output)[1].xpath = strdup("/test-module:kernel-modules/kernel-module[name='vboxvideo.ko']/get-dependencies/dependency");
+    (*output)[1].type = SR_STRING_T;
+    (*output)[1].data.string_val = strdup("drm_kms_helper");
+    (*output)[2].xpath = strdup("/test-module:kernel-modules/kernel-module[name='vboxvideo.ko']/get-dependencies/dependency");
+    (*output)[2].type = SR_STRING_T;
+    (*output)[2].data.string_val = strdup("ttm");
+
+    *output_cnt = 3;
+
+    return SR_ERR_OK;
+}
+
+static void
+cl_action_test(void **state)
+{
+    sr_conn_ctx_t *conn = *state;
+    assert_non_null(conn);
+
+    sr_session_ctx_t *session = NULL;
+    sr_subscription_ctx_t *subscription = NULL;
+    int cb1_called = 0, cb2_called = 0;
+    int rc = SR_ERR_OK;
+
+    /* start a session */
+    rc = sr_session_start(conn, SR_DS_RUNNING, SR_SESS_DEFAULT, &session);
+    assert_int_equal(rc, SR_ERR_OK);
+
+    /* subscribe for actions */
+    rc = sr_action_subscribe(session, "/test-module:kernel-modules/kernel-module[name='netlink_diag.ko']/load",
+            test_action_cb1, &cb1_called, SR_SUBSCR_DEFAULT, &subscription);
+    assert_int_equal(rc, SR_ERR_OK);
+    rc = sr_action_subscribe(session, "/test-module:kernel-modules/kernel-module[name='vboxvideo.ko']/get-dependencies",
+            test_action_cb2, &cb2_called, SR_SUBSCR_CTX_REUSE, &subscription);
+    assert_int_equal(rc, SR_ERR_OK);
+
+    sr_val_t input[2];
+    memset(&input, '\0', sizeof(input));
+    input[0].xpath = "/test-module:kernel-modules/kernel-module[name='netlink_diag.ko']/load/params";
+    input[0].type = SR_STRING_T;
+    input[0].data.string_val = "";
+    input[1].xpath = "/test-module:kernel-modules/kernel-module[name='netlink_diag.ko']/load/force";
+    input[1].type = SR_BOOL_T;
+    input[1].data.bool_val = true;
+    sr_val_t *output = NULL;
+    size_t output_cnt = 0;
+
+    /* send an Action (load a kernel module) */
+    rc = sr_action_send(session, "/test-module:kernel-modules/kernel-module[name='netlink_diag.ko']/load",
+            input, 2, &output, &output_cnt);
+    assert_int_equal(rc, SR_ERR_OK);
+    assert_int_equal(1, cb1_called);
+    assert_int_equal(0, cb2_called);
+
+    assert_int_equal(output_cnt, 1);
+    assert_string_equal("/test-module:kernel-modules/kernel-module[name='netlink_diag.ko']/load/return-code", output[0].xpath);
+    assert_int_equal(SR_UINT8_T, output[0].type);
+    assert_int_equal(0, output[0].data.uint8_val);
+    sr_free_values(output, output_cnt);
+    output_cnt = 0;
+    output = NULL;
+
+    /* send an Action (get dependencies of a kernel module) */
+    rc = sr_action_send(session, "/test-module:kernel-modules/kernel-module[name='vboxvideo.ko']/get-dependencies",
+            NULL, 0, &output, &output_cnt);
+    assert_int_equal(rc, SR_ERR_OK);
+    assert_int_equal(1, cb1_called);
+    assert_int_equal(1, cb2_called);
+
+    assert_int_equal(output_cnt, 3);
+    assert_string_equal("/test-module:kernel-modules/kernel-module[name='vboxvideo.ko']/get-dependencies/dependency", output[0].xpath);
+    assert_int_equal(SR_STRING_T, output[0].type);
+    assert_string_equal("drm", output[0].data.string_val);
+    assert_string_equal("/test-module:kernel-modules/kernel-module[name='vboxvideo.ko']/get-dependencies/dependency", output[1].xpath);
+    assert_int_equal(SR_STRING_T, output[1].type);
+    assert_string_equal("drm_kms_helper", output[1].data.string_val);
+    assert_string_equal("/test-module:kernel-modules/kernel-module[name='vboxvideo.ko']/get-dependencies/dependency", output[2].xpath);
+    assert_int_equal(SR_STRING_T, output[2].type);
+    assert_string_equal("ttm", output[2].data.string_val);
+    sr_free_values(output, output_cnt);
+    output_cnt = 0;
+    output = NULL;
+
+    /* send Action non-existing in the data tree */
+    rc = sr_action_send(session, "/test-module:kernel-modules/kernel-module[name='non-existing-module']/get-dependencies",
+            NULL, 0, &output, &output_cnt);
+    assert_int_equal(SR_ERR_BAD_ELEMENT, rc);
+
+    /* stop the session */
+    rc = sr_session_stop(session);
+    assert_int_equal(rc, SR_ERR_OK);
+
+    /* unsubscribe */
+    rc = sr_unsubscribe(NULL, subscription);
+    assert_int_equal(rc, SR_ERR_OK);
+}
+
 static void
 candidate_ds_test(void **state)
 {
@@ -2236,6 +2376,7 @@ main()
             cmocka_unit_test_setup_teardown(cl_copy_config_test, sysrepo_setup, sysrepo_teardown),
             cmocka_unit_test_setup_teardown(cl_copy_config_test2, sysrepo_setup, sysrepo_teardown),
             cmocka_unit_test_setup_teardown(cl_rpc_test, sysrepo_setup, sysrepo_teardown),
+            cmocka_unit_test_setup_teardown(cl_action_test, sysrepo_setup, sysrepo_teardown),
             cmocka_unit_test_setup_teardown(candidate_ds_test, sysrepo_setup, sysrepo_teardown),
             cmocka_unit_test_setup_teardown(cl_switch_ds, sysrepo_setup, sysrepo_teardown),
             cmocka_unit_test_setup_teardown(cl_candidate_refresh, sysrepo_setup, sysrepo_teardown),

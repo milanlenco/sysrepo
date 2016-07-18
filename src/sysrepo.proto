@@ -485,6 +485,7 @@ enum SubscriptionType {
   DP_GET_ITEMS_SUBS = 20;
 
   RPC_SUBS = 30;
+  ACTION_SUBS = 31;
 
   EVENT_NOTIF_SUBS = 40;
 
@@ -621,20 +622,22 @@ message DataProvideResp {
 
 
 ////////////////////////////////////////////////////////////////////////////////
-// RPC API
+// RPC/Action API
 ////////////////////////////////////////////////////////////////////////////////
 
 message RPCReq {
-  required string xpath = 1;
-  repeated Value input = 2;
+  required bool action = 1;
+  required string xpath = 2;
+  repeated Value input = 3;
 
   optional string subscriber_address = 10;
   optional uint32 subscription_id = 11;
 }
 
 message RPCResp {
-  required string xpath = 1;
-  repeated Value output = 2;
+  required bool action = 1;
+  required string xpath = 2;
+  repeated Value output = 3;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -709,7 +712,8 @@ enum Operation {
 
   DATA_PROVIDE = 80;
   RPC = 81;
-  EVENT_NOTIF = 82;
+  ACTION = 82;
+  EVENT_NOTIF = 85;
 
   UNSUBSCRIBE_DESTINATION = 101;
   COMMIT_RELEASE = 102;

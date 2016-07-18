@@ -1174,21 +1174,10 @@ int sr_rpc_send(sr_session_ctx_t *session, const char *xpath,
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * @brief Callback to be called by the delivery of Action (operation connected to a specific data node)
- * specified by xpath. Subscribe to it by ::sr_action_subscribe call.
- *
- * @param[in] xpath XPath identifying the Action.
- * @param[in] input Array of input parameters.
- * @param[in] input_cnt Number of input parameters.
- * @param[out] output Array of output parameters. Should be allocated on heap,
- * will be freed by sysrepo after sending of the Action response.
- * @param[out] output_cnt Number of output parameters.
- * @param[in] private_ctx Private context opaque to sysrepo, as passed to ::sr_action_subscribe call.
- *
- * @return Error code (SR_ERR_OK on success).
+ * @brief Callback to be called by the delivery of Action (operation connected to a specific data node).
+ * @see This type is an alias for @ref sr_rpc_cb "the RPC callback type".
  */
-typedef int (*sr_action_cb)(const char *xpath, const sr_val_t *input, const size_t input_cnt,
-        sr_val_t **output, size_t *output_cnt, void *private_ctx);
+typedef sr_rpc_cb sr_action_cb;
 
 /**
  * @brief Subscribes for delivery of Action specified by xpath.

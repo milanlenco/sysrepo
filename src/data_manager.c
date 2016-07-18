@@ -3151,13 +3151,14 @@ dm_validate_procedure(dm_ctx_t *dm_ctx, dm_session_t *session, dm_procedure_t ty
     size_t arg_cnt = 0;
     const struct lys_module *module = NULL;
     const struct lys_node *sch_node = NULL;
-    struct lyd_node *data_tree = NULL, *new_node = NULL;
+    struct lyd_node *data_tree = NULL, *tmp_data_tree = NULL, *new_node = NULL;
     char *string_value = NULL, *tmp_xpath = NULL;
     struct ly_set *ly_nodes = NULL;
     char *module_name = NULL;
-    char *procedure_name = NULL;
+    const char *procedure_name = NULL;
     int validation_options = 0;
-    char *last_delim = NULL;
+    const char *last_delim = NULL;
+    const char *errmsg = NULL;
     int ret = 0, rc = SR_ERR_OK;
 
     args = *args_p;
@@ -3187,8 +3188,8 @@ dm_validate_procedure(dm_ctx_t *dm_ctx, dm_session_t *session, dm_procedure_t ty
 
     /* test for the presence of the procedure in the schema tree */
     pthread_rwlock_rdlock(&dm_ctx->lyctx_lock);
-    data_tree = lyd_new_path(NULL, dm_ctx->ly_ctx, xpath, NULL, 0);
-    if (NULL == data_tree) {
+    tmp_data_tree = lyd_new_path(NULL, dm_ctx->ly_ctx, xpath, NULL, 0);
+    if (NULL == tmp_data_tree) {
         SR_LOG_ERR("%s xpath validation failed ('%s'): %s", procedure_name, xpath, ly_errmsg());
         pthread_rwlock_unlock(&dm_ctx->lyctx_lock);
         return dm_report_error(session, ly_errmsg(), xpath, SR_ERR_BAD_ELEMENT);
@@ -3196,24 +3197,35 @@ dm_validate_procedure(dm_ctx_t *dm_ctx, dm_session_t *session, dm_procedure_t ty
 
     /* test for the presence of the procedure in the data tree */
     if (type == DM_PROCEDURE_EVENT_NOTIF || type == DM_PROCEDURE_ACTION) {
+        ret = dm_get_datatree(dm_ctx, session, module->name, &data_tree);
+        if (0 != ret) {
+            errmsg = "Unable to get the data tree of the module.";
+            SR_LOG_ERR("%s content validation failed: %s",
+                    procedure_name, errmsg);
+            pthread_rwlock_unlock(&dm_ctx->lyctx_lock);
+            return dm_report_error(session, errmsg, ly_errpath(), SR_ERR_INTERNAL);
+        }
         last_delim = strrchr(xpath, '/');
         if (NULL == last_delim) {
             /* shouldn't really happen */
-            SR_LOG_ERR("%s xpath validation failed ('%s'): %s", procedure_name, xpath, ly_errmsg());
+            errmsg = "Missing last xpath delimiter (libyang shoud have detected this).";
+            SR_LOG_ERR("%s xpath validation failed ('%s'): %s", procedure_name, xpath, errmsg);
             pthread_rwlock_unlock(&dm_ctx->lyctx_lock);
-            return dm_report_error(session, ly_errmsg(), xpath, SR_ERR_BAD_ELEMENT);
+            return dm_report_error(session, errmsg, xpath, SR_ERR_BAD_ELEMENT);
         }
         if (last_delim > xpath) {
             tmp_xpath = calloc(last_delim - xpath + 1, sizeof(*tmp_xpath));
             strncat(tmp_xpath, xpath, last_delim - xpath);
             ly_nodes = lyd_get_node(data_tree, tmp_xpath);
             free(tmp_xpath);
+            tmp_xpath = NULL;
             if (0 == ly_nodes->number) {
-                SR_LOG_ERR("%s xpath validation failed ('%s'): the target node is not present in the data tree.",
-                        procedure_name, xpath);
+                errmsg = "The target node is not present in the data tree."; 
+                SR_LOG_ERR("%s xpath validation failed ('%s'): %s",
+                        procedure_name, xpath, errmsg);
                 ly_set_free(ly_nodes);
                 pthread_rwlock_unlock(&dm_ctx->lyctx_lock);
-                return dm_report_error(session, ly_errmsg(), xpath, SR_ERR_BAD_ELEMENT);
+                return dm_report_error(session, errmsg, xpath, SR_ERR_BAD_ELEMENT);
             }
             ly_set_free(ly_nodes);
         }
@@ -3232,12 +3244,13 @@ dm_validate_procedure(dm_ctx_t *dm_ctx, dm_session_t *session, dm_procedure_t ty
         if ((SR_CONTAINER_T != args[i].type) && (SR_LIST_T != args[i].type)) {
             rc = sr_val_to_str(&args[i], sch_node, &string_value);
             if (SR_ERR_OK != rc) {
+                rc = SR_ERR_VALIDATION_FAILED;
                 SR_LOG_ERR("Unable to convert %s argument value to string.", procedure_name);
                 break;
             }
         }
         /* create the argument node in the tree */
-        new_node = lyd_new_path(data_tree, dm_ctx->ly_ctx, args[i].xpath, string_value, (input ? 0 : LYD_PATH_OPT_OUTPUT));
+        new_node = lyd_new_path(tmp_data_tree, dm_ctx->ly_ctx, args[i].xpath, string_value, (input ? 0 : LYD_PATH_OPT_OUTPUT));
         free(string_value);
         if (NULL == new_node) {
             SR_LOG_ERR("Unable to add new %s argument '%s': %s.", procedure_name, args[i].xpath, ly_errmsg());
@@ -3257,7 +3270,7 @@ dm_validate_procedure(dm_ctx_t *dm_ctx, dm_session_t *session, dm_procedure_t ty
             case DM_PROCEDURE_EVENT_NOTIF:
                 validation_options |= LYD_OPT_NOTIF;
         }
-        ret = lyd_validate(&data_tree, validation_options);
+        ret = lyd_validate(&tmp_data_tree, validation_options);
         if (0 != ret) {
             SR_LOG_ERR("%s content validation failed: %s", procedure_name, ly_errmsg());
             rc = dm_report_error(session, ly_errmsg(), ly_errpath(), SR_ERR_VALIDATION_FAILED);
@@ -3270,7 +3283,7 @@ dm_validate_procedure(dm_ctx_t *dm_ctx, dm_session_t *session, dm_procedure_t ty
         if (NULL != tmp_xpath) {
             strcat(tmp_xpath, xpath);
             strcat(tmp_xpath, "//*");
-            ly_nodes = lyd_get_node(data_tree, tmp_xpath);
+            ly_nodes = lyd_get_node(tmp_data_tree, tmp_xpath);
             if (NULL != ly_nodes) {
                 rc = rp_dt_get_values_from_nodes(ly_nodes, &args, &arg_cnt);
                 if (SR_ERR_OK == rc) {
@@ -3292,7 +3305,7 @@ dm_validate_procedure(dm_ctx_t *dm_ctx, dm_session_t *session, dm_procedure_t ty
 
     pthread_rwlock_unlock(&dm_ctx->lyctx_lock);
 
-    lyd_free_withsiblings(data_tree);
+    lyd_free_withsiblings(tmp_data_tree);
 
     return rc;
 }
