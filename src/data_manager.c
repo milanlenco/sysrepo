@@ -3191,8 +3191,8 @@ dm_validate_procedure(dm_ctx_t *dm_ctx, dm_session_t *session, dm_procedure_t ty
     tmp_data_tree = lyd_new_path(NULL, dm_ctx->ly_ctx, xpath, NULL, 0);
     if (NULL == tmp_data_tree) {
         SR_LOG_ERR("%s xpath validation failed ('%s'): %s", procedure_name, xpath, ly_errmsg());
-        pthread_rwlock_unlock(&dm_ctx->lyctx_lock);
-        return dm_report_error(session, ly_errmsg(), xpath, SR_ERR_BAD_ELEMENT);
+        rc = dm_report_error(session, ly_errmsg(), xpath, SR_ERR_BAD_ELEMENT);
+        goto cleanup;
     }
 
     /* test for the presence of the procedure in the data tree */
@@ -3202,16 +3202,16 @@ dm_validate_procedure(dm_ctx_t *dm_ctx, dm_session_t *session, dm_procedure_t ty
             errmsg = "Unable to get the data tree of the module.";
             SR_LOG_ERR("%s content validation failed: %s",
                     procedure_name, errmsg);
-            pthread_rwlock_unlock(&dm_ctx->lyctx_lock);
-            return dm_report_error(session, errmsg, ly_errpath(), SR_ERR_INTERNAL);
+            rc = dm_report_error(session, errmsg, ly_errpath(), SR_ERR_INTERNAL);
+            goto cleanup;
         }
         last_delim = strrchr(xpath, '/');
         if (NULL == last_delim) {
             /* shouldn't really happen */
             errmsg = "Missing last xpath delimiter (libyang shoud have detected this).";
             SR_LOG_ERR("%s xpath validation failed ('%s'): %s", procedure_name, xpath, errmsg);
-            pthread_rwlock_unlock(&dm_ctx->lyctx_lock);
-            return dm_report_error(session, errmsg, xpath, SR_ERR_BAD_ELEMENT);
+            rc = dm_report_error(session, errmsg, xpath, SR_ERR_BAD_ELEMENT);
+            goto cleanup;
         }
         if (last_delim > xpath) {
             tmp_xpath = calloc(last_delim - xpath + 1, sizeof(*tmp_xpath));
@@ -3224,8 +3224,8 @@ dm_validate_procedure(dm_ctx_t *dm_ctx, dm_session_t *session, dm_procedure_t ty
                 SR_LOG_ERR("%s xpath validation failed ('%s'): %s",
                         procedure_name, xpath, errmsg);
                 ly_set_free(ly_nodes);
-                pthread_rwlock_unlock(&dm_ctx->lyctx_lock);
-                return dm_report_error(session, errmsg, xpath, SR_ERR_BAD_ELEMENT);
+                rc = dm_report_error(session, errmsg, xpath, SR_ERR_BAD_ELEMENT);
+                goto cleanup;
             }
             ly_set_free(ly_nodes);
         }
@@ -3237,7 +3237,7 @@ dm_validate_procedure(dm_ctx_t *dm_ctx, dm_session_t *session, dm_procedure_t ty
         if (NULL == sch_node) {
             SR_LOG_ERR("%s argument xpath validation failed('%s'): %s", procedure_name, args[i].xpath, ly_errmsg());
             rc = dm_report_error(session, ly_errmsg(), args[i].xpath, SR_ERR_BAD_ELEMENT);
-            break;
+            goto cleanup;
         }
         /* copy argument value to string */
         string_value = NULL;
@@ -3246,7 +3246,7 @@ dm_validate_procedure(dm_ctx_t *dm_ctx, dm_session_t *session, dm_procedure_t ty
             if (SR_ERR_OK != rc) {
                 rc = SR_ERR_VALIDATION_FAILED;
                 SR_LOG_ERR("Unable to convert %s argument value to string.", procedure_name);
-                break;
+                goto cleanup;
             }
         }
         /* create the argument node in the tree */
@@ -3255,7 +3255,7 @@ dm_validate_procedure(dm_ctx_t *dm_ctx, dm_session_t *session, dm_procedure_t ty
         if (NULL == new_node) {
             SR_LOG_ERR("Unable to add new %s argument '%s': %s.", procedure_name, args[i].xpath, ly_errmsg());
             rc = dm_report_error(session, ly_errmsg(), ly_errpath(), SR_ERR_VALIDATION_FAILED);
-            break;
+            goto cleanup;
         }
     }
 
@@ -3307,10 +3307,11 @@ dm_validate_procedure(dm_ctx_t *dm_ctx, dm_session_t *session, dm_procedure_t ty
         }
     }
 
+cleanup:
+    if (tmp_data_tree) {
+        lyd_free_withsiblings(tmp_data_tree);
+    }
     pthread_rwlock_unlock(&dm_ctx->lyctx_lock);
-
-    lyd_free_withsiblings(tmp_data_tree);
-
     return rc;
 }
 
