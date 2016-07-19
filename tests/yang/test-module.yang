@@ -397,7 +397,6 @@ module test-module {
       }
 
       action get-dependencies {
-        input {}
         output {
           leaf-list dependency {
             type string;

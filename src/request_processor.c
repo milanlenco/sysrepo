@@ -1269,7 +1269,7 @@ rp_rpc_or_action_req_process(const rp_ctx_t *rp_ctx, const rp_session_t *session
 
     /* duplicate msg into req with the new input values */
     if (SR_ERR_OK == rc) {
-        rc = sr_gpb_req_alloc(msg->request->rpc_req->action ? SR__OPERATION__ACTION : SR__OPERATION__RPC, session->id, &req);
+        rc = sr_gpb_req_alloc(action ? SR__OPERATION__ACTION : SR__OPERATION__RPC, session->id, &req);
     }
     if (SR_ERR_OK == rc) {
         req->request->rpc_req->action = action;
@@ -1413,7 +1413,7 @@ rp_rpc_or_action_resp_process(const rp_ctx_t *rp_ctx, const rp_session_t *sessio
         return rc;
     }
 
-    action = msg->request->rpc_req->action;
+    action = msg->response->rpc_resp->action;
 
     /* validate the RPC/Action response */
     rc = sr_values_gpb_to_sr(msg->response->rpc_resp->output,  msg->response->rpc_resp->n_output, &output, &output_cnt);
