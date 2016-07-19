@@ -3261,7 +3261,7 @@ dm_validate_procedure(dm_ctx_t *dm_ctx, dm_session_t *session, dm_procedure_t ty
 
     /* validate the content (and also add default nodes) */
     if ((SR_ERR_OK == rc) && (arg_cnt > 0)) {
-        validation_options = LYD_OPT_STRICT | LYD_WD_IMPL_TAG;
+        validation_options = LYD_OPT_STRICT | LYD_WD_IMPL_TAG | LYD_OPT_NOSIBLINGS;
         switch (type) {
             case DM_PROCEDURE_RPC:
             case DM_PROCEDURE_ACTION:
@@ -3270,11 +3270,15 @@ dm_validate_procedure(dm_ctx_t *dm_ctx, dm_session_t *session, dm_procedure_t ty
             case DM_PROCEDURE_EVENT_NOTIF:
                 validation_options |= LYD_OPT_NOTIF;
         }
-        ret = lyd_validate(&tmp_data_tree, validation_options);
-        if (0 != ret) {
+        ly_nodes = lyd_get_node(tmp_data_tree, xpath);
+        if (1 == ly_nodes->number) {
+            ret = lyd_validate(&ly_nodes->set.d[0], validation_options);
+        }
+        if (1 != ly_nodes->number || 0 != ret) {
             SR_LOG_ERR("%s content validation failed: %s", procedure_name, ly_errmsg());
             rc = dm_report_error(session, ly_errmsg(), ly_errpath(), SR_ERR_VALIDATION_FAILED);
         }
+        ly_set_free(ly_nodes);
     }
 
     /* re-read the arguments from data tree (it can now contain newly added default nodes) */
