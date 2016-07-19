@@ -2004,37 +2004,55 @@ cleanup:
     return cl_session_return(session, rc);
 }
 
-int
-sr_rpc_send(sr_session_ctx_t *session, const char *xpath,
+/**
+ * @brief Sends a RPC/Action specified by xpath and waits for the result.
+ *
+ * @param[in] session Session context acquired with ::sr_session_start call.
+ * @param[in] xpath XPath identifying the RPC/Action.
+ * @param[in] action True if this is action, false in case of RPC.
+ * @param[in] input Array of input parameters (array of all nodes that hold some
+ * data in RPC/Action input subtree - same as ::sr_get_items would return).
+ * @param[in] input_cnt Number of input parameters.
+ * @param[out] output Array of output parameters (all nodes that hold some data
+ * in RPC/Action output subtree). Will be allocated by sysrepo and should be freed by
+ * caller using ::sr_free_values.
+ * @param[out] output_cnt Number of output parameters.
+ *
+ * @return Error code (SR_ERR_OK on success).
+ */
+static int
+sr_rpc_or_action_send(sr_session_ctx_t *session, const char *xpath, bool action,
         const sr_val_t *input,  const size_t input_cnt, sr_val_t **output, size_t *output_cnt)
 {
     Sr__Msg *msg_req = NULL, *msg_resp = NULL;
     int rc = SR_ERR_OK;
+    const char *op_name = action ? "Action" : "RPC";
 
     CHECK_NULL_ARG3(session, session->conn_ctx, xpath);
 
     cl_session_clear_errors(session);
 
-    /* prepare RPC message */
-    rc = sr_gpb_req_alloc(SR__OPERATION__RPC, session->id, &msg_req);
+    /* prepare RPC/Action message */
+    rc = sr_gpb_req_alloc(action ? SR__OPERATION__ACTION : SR__OPERATION__RPC, session->id, &msg_req);
     CHECK_RC_MSG_GOTO(rc, cleanup, "Cannot allocate GPB message.");
 
     /* set arguments */
+    msg_req->request->rpc_req->action = action;
     msg_req->request->rpc_req->xpath = strdup(xpath);
     CHECK_NULL_NOMEM_GOTO(msg_req->request->rpc_req->xpath, rc, cleanup);
 
     /* set input arguments */
     rc = sr_values_sr_to_gpb(input, input_cnt, &msg_req->request->rpc_req->input, &msg_req->request->rpc_req->n_input);
-    CHECK_RC_MSG_GOTO(rc, cleanup, "Error by copying RPC input arguments to GPB.");
+    CHECK_RC_LOG_GOTO(rc, cleanup, "Error by copying %s input arguments to GPB.", op_name);
 
     /* send the request and receive the response */
-    rc = cl_request_process(session, msg_req, &msg_resp, SR__OPERATION__RPC);
+    rc = cl_request_process(session, msg_req, &msg_resp, action ? SR__OPERATION__ACTION : SR__OPERATION__RPC);
     CHECK_RC_MSG_GOTO(rc, cleanup, "Error by processing of the request.");
 
     if (NULL != output) {
         /* set output arguments */
         rc = sr_values_gpb_to_sr(msg_resp->response->rpc_resp->output, msg_resp->response->rpc_resp->n_output, output, output_cnt);
-        CHECK_RC_MSG_GOTO(rc, cleanup, "Error by copying RPC output arguments from GPB.");
+        CHECK_RC_LOG_GOTO(rc, cleanup, "Error by copying %s output arguments from GPB.", op_name);
     }
 
     sr__msg__free_unpacked(msg_req, NULL);
@@ -2050,6 +2068,13 @@ cleanup:
         sr__msg__free_unpacked(msg_resp, NULL);
     }
     return cl_session_return(session, rc);
+}
+
+int
+sr_rpc_send(sr_session_ctx_t *session, const char *xpath,
+        const sr_val_t *input,  const size_t input_cnt, sr_val_t **output, size_t *output_cnt)
+{
+    return sr_rpc_or_action_send(session, xpath, false, input, input_cnt, output, output_cnt);
 }
 
 int
@@ -2110,6 +2135,13 @@ cleanup:
     }
     free(module_name);
     return cl_session_return(session, rc);
+}
+
+int
+sr_action_send(sr_session_ctx_t *session, const char *xpath,
+        const sr_val_t *input,  const size_t input_cnt, sr_val_t **output, size_t *output_cnt)
+{
+    return sr_rpc_or_action_send(session, xpath, true, input, input_cnt, output, output_cnt);
 }
 
 int

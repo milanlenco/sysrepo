@@ -1035,7 +1035,8 @@ rp_subscribe_req_process(const rp_ctx_t *rp_ctx, const rp_session_t *session, Sr
     if (subscribe_req->has_enable_running && subscribe_req->enable_running) {
         options |= NP_SUBSCR_ENABLE_RUNNING;
     }
-    if (SR__SUBSCRIPTION_TYPE__RPC_SUBS == subscribe_req->type) {
+    if (SR__SUBSCRIPTION_TYPE__RPC_SUBS == subscribe_req->type ||
+        SR__SUBSCRIPTION_TYPE__ACTION_SUBS == subscribe_req->type) {
         options |= NP_SUBSCR_EXCLUSIVE;
     }
 
@@ -1230,10 +1231,10 @@ cleanup:
 }
 
 /**
- * @brief Processes a RPC request.
+ * @brief Processes a RPC/Action request.
  */
 static int
-rp_rpc_req_process(const rp_ctx_t *rp_ctx, const rp_session_t *session, Sr__Msg *msg)
+rp_rpc_or_action_req_process(const rp_ctx_t *rp_ctx, const rp_session_t *session, Sr__Msg *msg)
 {
     char *module_name = NULL;
     sr_val_t *input = NULL;
@@ -1241,6 +1242,8 @@ rp_rpc_req_process(const rp_ctx_t *rp_ctx, const rp_session_t *session, Sr__Msg 
     np_subscription_t *subscriptions = NULL;
     size_t subscription_cnt = 0;
     Sr__Msg *req = NULL, *resp = NULL;
+    const char *op_name = NULL;
+    bool action = false;
     int rc = SR_ERR_OK, rc_tmp = SR_ERR_OK;
 
     CHECK_NULL_ARG_NORET5(rc, rp_ctx, session, msg, msg->request, msg->request->rpc_req);
@@ -1250,19 +1253,26 @@ rp_rpc_req_process(const rp_ctx_t *rp_ctx, const rp_session_t *session, Sr__Msg 
         return rc;
     }
 
-    SR_LOG_DBG_MSG("Processing RPC request.");
+    action = msg->request->rpc_req->action;
+    op_name = action ? "Action": "RPC";
+    SR_LOG_DBG("Processing %s request.", op_name);
 
-    /* validate RPC request */
+    /* validate RPC/Action request */
     rc = sr_values_gpb_to_sr(msg->request->rpc_req->input,  msg->request->rpc_req->n_input, &input, &input_cnt);
     if (SR_ERR_OK == rc) {
-        rc = dm_validate_rpc(rp_ctx->dm_ctx, session->dm_session, msg->request->rpc_req->xpath, &input, &input_cnt, true);
+        if (action) {
+            rc = dm_validate_action(rp_ctx->dm_ctx, session->dm_session, msg->request->rpc_req->xpath, &input, &input_cnt, true);
+        } else {
+            rc = dm_validate_rpc(rp_ctx->dm_ctx, session->dm_session, msg->request->rpc_req->xpath, &input, &input_cnt, true);
+        }
     }
 
     /* duplicate msg into req with the new input values */
     if (SR_ERR_OK == rc) {
-        rc = sr_gpb_req_alloc(SR__OPERATION__RPC, session->id, &req);
+        rc = sr_gpb_req_alloc(msg->request->rpc_req->action ? SR__OPERATION__ACTION : SR__OPERATION__RPC, session->id, &req);
     }
     if (SR_ERR_OK == rc) {
+        req->request->rpc_req->action = action;
         req->request->rpc_req->xpath = strdup(msg->request->rpc_req->xpath);
         CHECK_NULL_NOMEM_ERROR(req->request->rpc_req->xpath, rc);
     }
@@ -1276,7 +1286,7 @@ rp_rpc_req_process(const rp_ctx_t *rp_ctx, const rp_session_t *session, Sr__Msg 
         rc = sr_copy_first_ns(req->request->rpc_req->xpath, &module_name);
     }
 
-    /* authorize (write permissions are required to deliver the RPC) */
+    /* authorize (write permissions are required to deliver the RPC/Action) */
     if (SR_ERR_OK == rc) {
         rc = ac_check_module_permissions(session->ac_session, module_name, AC_OPER_READ_WRITE);
         if (SR_ERR_OK != rc) {
@@ -1284,9 +1294,10 @@ rp_rpc_req_process(const rp_ctx_t *rp_ctx, const rp_session_t *session, Sr__Msg 
         }
     }
 
-    /* get RPC subscription */
+    /* get RPC/Action subscription */
     if (SR_ERR_OK == rc) {
-        rc = pm_get_subscriptions(rp_ctx->pm_ctx, module_name, SR__SUBSCRIPTION_TYPE__RPC_SUBS,
+        rc = pm_get_subscriptions(rp_ctx->pm_ctx, module_name,
+                action ? SR__SUBSCRIPTION_TYPE__ACTION_SUBS : SR__SUBSCRIPTION_TYPE__RPC_SUBS,
                 &subscriptions, &subscription_cnt);
     }
     free(module_name);
@@ -1306,8 +1317,8 @@ rp_rpc_req_process(const rp_ctx_t *rp_ctx, const rp_session_t *session, Sr__Msg 
     }
 
     if (SR_ERR_OK == rc && !subscription_match) {
-        /* no subscription for this RPC */
-        SR_LOG_ERR("No subscription found for RPC delivery (xpath = '%s').", req->request->rpc_req->xpath);
+        /* no subscription for this RPC/Action */
+        SR_LOG_ERR("No subscription found for %s delivery (xpath = '%s').", op_name, req->request->rpc_req->xpath);
         rc = SR_ERR_NOT_FOUND;
     }
 
@@ -1316,9 +1327,10 @@ rp_rpc_req_process(const rp_ctx_t *rp_ctx, const rp_session_t *session, Sr__Msg 
         rc = cm_msg_send(rp_ctx->cm_ctx, req);
     } else {
         /* send the response with error */
-        rc_tmp = sr_gpb_resp_alloc(SR__OPERATION__RPC, session->id, &resp);
+        rc_tmp = sr_gpb_resp_alloc(action ? SR__OPERATION__ACTION : SR__OPERATION__RPC, session->id, &resp);
         if (SR_ERR_OK == rc_tmp) {
             resp->response->result = rc;
+            resp->response->rpc_resp->action = action;
             resp->response->rpc_resp->xpath = msg->request->rpc_req->xpath;
             msg->request->rpc_req->xpath = NULL;
             /* send the response */
@@ -1383,14 +1395,15 @@ cleanup:
 }
 
 /**
- * @brief Processes a RPC response.
+ * @brief Processes a RPC/Action response.
  */
 static int
-rp_rpc_resp_process(const rp_ctx_t *rp_ctx, const rp_session_t *session, Sr__Msg *msg)
+rp_rpc_or_action_resp_process(const rp_ctx_t *rp_ctx, const rp_session_t *session, Sr__Msg *msg)
 {
     sr_val_t *output = NULL;
     size_t output_cnt = 0;
     Sr__Msg *resp = NULL;
+    bool action = false;
     int rc = SR_ERR_OK;
 
     CHECK_NULL_ARG_NORET5(rc, rp_ctx, session, msg, msg->response, msg->response->rpc_resp);
@@ -1400,17 +1413,24 @@ rp_rpc_resp_process(const rp_ctx_t *rp_ctx, const rp_session_t *session, Sr__Msg
         return rc;
     }
 
-    /* validate the RPC response */
+    action = msg->request->rpc_req->action;
+
+    /* validate the RPC/Action response */
     rc = sr_values_gpb_to_sr(msg->response->rpc_resp->output,  msg->response->rpc_resp->n_output, &output, &output_cnt);
     if (SR_ERR_OK == rc) {
-        rc = dm_validate_rpc(rp_ctx->dm_ctx, session->dm_session, msg->response->rpc_resp->xpath, &output, &output_cnt, false);
+        if (action) {
+            rc = dm_validate_action(rp_ctx->dm_ctx, session->dm_session, msg->response->rpc_resp->xpath, &output, &output_cnt, false);
+        } else {
+            rc = dm_validate_rpc(rp_ctx->dm_ctx, session->dm_session, msg->response->rpc_resp->xpath, &output, &output_cnt, false);
+        }
     }
 
     /* duplicate msg into resp with the new output values */
     if (SR_ERR_OK == rc) {
-        rc = sr_gpb_resp_alloc(SR__OPERATION__RPC, session->id, &resp);
+        rc = sr_gpb_resp_alloc(action ? SR__OPERATION__ACTION : SR__OPERATION__RPC, session->id, &resp);
     }
     if (SR_ERR_OK == rc) {
+        resp->response->rpc_resp->action = action;
         resp->response->rpc_resp->xpath = strdup(msg->response->rpc_resp->xpath);
         CHECK_NULL_NOMEM_ERROR(resp->response->rpc_resp->xpath, rc);
     }
@@ -1435,7 +1455,7 @@ rp_rpc_resp_process(const rp_ctx_t *rp_ctx, const rp_session_t *session, Sr__Msg
         SR_LOG_ERR_MSG("Copying errors to gpb failed.");
     }
 
-    /* forward RPC response to the originator */
+    /* forward RPC/Action response to the originator */
     rc = cm_msg_send(rp_ctx->cm_ctx, resp);
 
     return rc;
@@ -1715,7 +1735,8 @@ rp_req_dispatch(rp_ctx_t *rp_ctx, rp_session_t *session, Sr__Msg *msg, bool *ski
             rc = rp_get_changes_req_process(rp_ctx, session, msg);
             break;
         case SR__OPERATION__RPC:
-            rc = rp_rpc_req_process(rp_ctx, session, msg);
+        case SR__OPERATION__ACTION:
+            rc = rp_rpc_or_action_req_process(rp_ctx, session, msg);
             *skip_msg_cleanup = true;
             return rc; /* skip further processing */
         case SR__OPERATION__EVENT_NOTIF:
@@ -1764,7 +1785,8 @@ rp_resp_dispatch(rp_ctx_t *rp_ctx, rp_session_t *session, Sr__Msg *msg, bool *sk
             rc = rp_data_provide_resp_process(rp_ctx, session, msg);
             break;
         case SR__OPERATION__RPC:
-            rc = rp_rpc_resp_process(rp_ctx, session, msg);
+        case SR__OPERATION__ACTION:
+            rc = rp_rpc_or_action_resp_process(rp_ctx, session, msg);
             *skip_msg_cleanup = true;
             break;
         default:
