@@ -11,6 +11,15 @@ sudo apt-get install -y --force-yes libavl-dev libev-dev valgrind swig3.0 python
 pip install --user codecov
 echo -n | openssl s_client -connect scan.coverity.com:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | sudo tee -a /etc/ssl/certs/ca-certificates.crt
 
+ldd --version
+apt-cache policy libc6
+sudo apt-get install libc6
+ldd --version
+sudo apt-get update
+apt-cache policy libc6
+sudo apt-get install libc6
+ldd --version
+
 # check to see if cache folder is empty
 if [ ! -d "$INSTALL_PREFIX_DIR/lib" ]; then
     echo "Building all libraries."
