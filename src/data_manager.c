@@ -4143,7 +4143,7 @@ dm_commit_netconf_access_control(dm_ctx_t *dm_ctx, dm_session_t *session, dm_com
     dm_module_difflist_t *module_difflist = NULL;
     dm_data_info_t *info = NULL, *commit_info = NULL, *prev_info = NULL, lookup_info = {0};
 
-    if (NULL == dm_ctx->nacm_ctx || !(c_ctx->init_session->options & SR_SESS_ENABLE_NACM)) {
+    if (NULL == dm_ctx->nacm_ctx || !session->enable_nacm) {
         goto cleanup;
     }
 
@@ -5047,7 +5047,7 @@ dm_copy_config(dm_ctx_t *dm_ctx, dm_session_t *session, const sr_list_t *module_
 
         if (NULL != session && session->enable_nacm) {
             /* filter out nodes from the data tree that the user doesn't have read access to by NACM */
-            rc = rp_dt_nacm_filtering(dm_ctx, session->user_credentials, src_infos[i]->node, &data_tree);
+            rc = rp_dt_nacm_filtering(dm_ctx, session->user_credentials, src_infos[i]->node, true, &data_tree);
             CHECK_RC_MSG_GOTO(rc, cleanup, "NACM filtering has failed");
         } else {
             data_tree = src_infos[i]->node;
@@ -5073,14 +5073,14 @@ dm_copy_config(dm_ctx_t *dm_ctx, dm_session_t *session, const sr_list_t *module_
             dup = data_tree;
             if (NULL != dup && src_infos[i]->node == dup) {
                 dup = sr_dup_datatree(src_infos[i]->node);
-            }
-            dm_data_info_t *di_tmp = NULL;
-            if (NULL != src_infos[i]->node && NULL == dup) {
-                SR_LOG_ERR("Duplication of data tree %s failed", src_infos[i]->schema->module->name);
-                rc = SR_ERR_INTERNAL;
-                goto cleanup;
+                if (NULL == dup) {
+                    SR_LOG_ERR("Duplication of data tree %s failed", src_infos[i]->schema->module->name);
+                    rc = SR_ERR_INTERNAL;
+                    goto cleanup;
+                }
             }
             /* load data tree to be copied*/
+            dm_data_info_t *di_tmp = NULL;
             rc = dm_get_data_info(dm_ctx, dst_session, module_name, &di_tmp);
             CHECK_RC_MSG_GOTO(rc, cleanup, "Get data info failed");
             lyd_free_withsiblings(di_tmp->node);
@@ -6223,6 +6223,32 @@ dm_move_session_trees_in_session(dm_ctx_t *dm_ctx, dm_session_t *session, sr_dat
     CHECK_RC_MSG_RETURN(rc, "Discard changes failed");
 
     rc = dm_session_switch_ds(session, prev_ds);
+    return rc;
+}
+
+int
+dm_session_apply_nacm_filtering(dm_ctx_t* dm_ctx, dm_session_t* session)
+{
+    int rc = SR_ERR_OK;
+    size_t i = 0;
+    dm_data_info_t *info = NULL;
+    CHECK_NULL_ARG2(dm_ctx, session);
+
+    if (NULL == dm_ctx->nacm_ctx || !session->enable_nacm) {
+        goto cleanup;
+    }
+
+    while (NULL != (info = sr_btree_get_at(session->session_modules[session->datastore], i++))) {
+        if (!info->modified) {
+            continue;
+        }
+
+        /* filter out nodes from the data tree that the user doesn't have read access to by NACM */
+        rc = rp_dt_nacm_filtering(dm_ctx, session->user_credentials, info->node, false, NULL);
+        CHECK_RC_MSG_GOTO(rc, cleanup, "NACM filtering has failed");
+    }
+
+cleanup:
     return rc;
 }
 

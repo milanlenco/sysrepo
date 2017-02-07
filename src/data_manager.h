@@ -1012,6 +1012,14 @@ int dm_move_session_tree_and_ops_all_ds(dm_ctx_t *dm_ctx, dm_session_t *from, dm
 int dm_move_session_trees_in_session(dm_ctx_t *dm_ctx, dm_session_t *session, sr_datastore_t from, sr_datastore_t to);
 
 /**
+ * @brief Apply read-access NACM filtering on all modified models in the given session.
+ *
+ * @param [in] dm_ctx Data manager context.
+ * @param [in] session Data manager session to apply the filtering on.
+ */
+int dm_session_apply_nacm_filtering(dm_ctx_t* dm_ctx, dm_session_t* session);
+
+/**
  * @brief Returns the set of all modules.
  * @param [in] dm_ctx
  * @param [in] session

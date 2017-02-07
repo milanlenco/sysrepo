@@ -1082,7 +1082,6 @@ rp_dt_copy_config_to_running(rp_ctx_t* rp_ctx, rp_session_t* session, const char
         CHECK_RC_MSG_GOTO(rc, cleanup, "Get data info failed");
         info->modified = true;
     } else {
-
         /* load all enabled models */
         if (SR_DS_CANDIDATE == src) {
             rc = dm_copy_modified_session_trees(rp_ctx->dm_ctx, backup, session->dm_session);
@@ -1096,8 +1095,8 @@ rp_dt_copy_config_to_running(rp_ctx_t* rp_ctx, rp_session_t* session, const char
             CHECK_RC_LOG_GOTO(rc, cleanup, "Get data info failed %s", module);
             info->modified = true;
         }
-
     }
+
     /* change session to candidate */
     if (SR_DS_STARTUP == src) {
         rc = rp_dt_switch_datastore(rp_ctx, session, SR_DS_CANDIDATE);
@@ -1105,6 +1104,10 @@ rp_dt_copy_config_to_running(rp_ctx_t* rp_ctx, rp_session_t* session, const char
         rc = dm_move_session_trees_in_session(rp_ctx->dm_ctx, session->dm_session, SR_DS_STARTUP, SR_DS_CANDIDATE);
         CHECK_RC_MSG_GOTO(rc, cleanup, "Data tree move failed");
     }
+
+    rc = dm_session_apply_nacm_filtering(rp_ctx->dm_ctx, session->dm_session);
+    CHECK_RC_MSG_GOTO(rc, cleanup, "NACM read-access filtering has failed");
+
     /* commit */
     rc = rp_dt_commit(rp_ctx, session, NULL, &errors, &e_cnt);
     sr_free_errors(errors, e_cnt);

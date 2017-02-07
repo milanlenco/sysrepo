@@ -39,19 +39,20 @@ typedef struct rp_tree_pruning_ctx_s {
 } rp_tree_pruning_ctx_t;
 
 /**
- * @brief Get a copy of a given data tree excluding nodes to which the user doesn't have
- * read access.
- * For efficiency purposes, this method uses the copy-on-write principle -- the tree is copied only
- * if some nodes have actually been filtered out. Make sure to compare pointers *data_tree*
- * and *result* before de-allocating memory used by the trees.
+ * @brief Filter-out nodes from a given data tree that the user doesn't have permission to read.
+ * If copy-on-write is enabled, the tree is duplicated, but only if some nodes have been actually
+ * filtered out. In that case, make sure to compare pointers *data_tree* and *result* to learn
+ * if they point to the same tree or not.
  *
  * @param [in] dm_ctx Data manager context.
  * @param [in] user_credentials Credentials of the user accessing the data tree.
  * @param [in] data_tree Data tree to copy and filter.
+ * @param [in] copy_on_write Flag if the tree should be duplicated before editing. If disabled, the
+ *                           tree will be modified in-place.
  * @param [out] result Resulting data tree.
  */
 int rp_dt_nacm_filtering(dm_ctx_t *dm_ctx, const ac_ucred_t *user_credentials, struct lyd_node *data_tree,
-        struct lyd_node **result);
+        bool copy_on_write, struct lyd_node **result);
 
 /**
  * @brief Filter data tree nodes by NACM read access.

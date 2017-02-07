@@ -27,7 +27,7 @@
 
 
 int rp_dt_nacm_filtering(dm_ctx_t *dm_ctx, const ac_ucred_t *user_credentials, struct lyd_node *data_tree,
-        struct lyd_node **result_p)
+        bool copy_on_write, struct lyd_node **result_p)
 {
     int rc = SR_ERR_OK;
     struct ly_set *nodeset = NULL;
@@ -39,7 +39,7 @@ int rp_dt_nacm_filtering(dm_ctx_t *dm_ctx, const ac_ucred_t *user_credentials, s
     struct lyd_node *result = data_tree, *node = NULL, *next = NULL;
     char *xpath = NULL;
 
-    CHECK_NULL_ARG3(dm_ctx, user_credentials, result);
+    CHECK_NULL_ARG3(dm_ctx, user_credentials, (copy_on_write ? result_p : (void*)1));
 
     rc = dm_get_nacm_ctx(dm_ctx, &nacm_ctx);
     CHECK_RC_MSG_GOTO(rc, cleanup, "Failed to get NACM context.");
@@ -60,7 +60,7 @@ int rp_dt_nacm_filtering(dm_ctx_t *dm_ctx, const ac_ucred_t *user_credentials, s
             CHECK_RC_LOG_GOTO(rc, cleanup, "NACM data validation failed for node: %s.", node->schema->name);
             if (NACM_ACTION_DENY == nacm_action) {
                 nacm_report_read_access_denied(user_credentials, node, rule_name, rule_info);
-                if (result == data_tree) {
+                if (result == data_tree && copy_on_write) {
                     /* need to copy the input data tree */
                     result = sr_dup_datatree(data_tree);
                     CHECK_NULL_NOMEM_GOTO(result, rc, cleanup);
@@ -109,7 +109,7 @@ int rp_dt_nacm_filtering(dm_ctx_t *dm_ctx, const ac_ucred_t *user_credentials, s
 
 cleanup:
     nacm_data_validation_stop(nacm_data_val_ctx);
-    if (SR_ERR_OK == rc) {
+    if (SR_ERR_OK == rc && NULL != result_p) {
         *result_p = result;
     }
     free(xpath);
