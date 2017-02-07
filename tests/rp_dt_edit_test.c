@@ -43,6 +43,7 @@ typedef struct dm_session_s {
     dm_ctx_t *dm_ctx;                   /**< dm_ctx where the session belongs to */
     sr_datastore_t datastore;           /**< datastore to which the session is tied */
     const ac_ucred_t *user_credentials; /**< credentials of the user who this session belongs to */
+    bool enable_nacm;                   /**< flag if the NACM is enabled for this session */
     sr_btree_t **session_modules;       /**< array of binary trees holding session copies of data models for each datastore */
     dm_sess_op_t **operations;          /**< array of list of operations performed in this session */
     size_t *oper_count;                 /**< array of number of performed operation */
