@@ -1062,7 +1062,7 @@ rp_dt_copy_config_to_running(rp_ctx_t* rp_ctx, rp_session_t* session, const char
     size_t e_cnt = 0;
 
     /* copy to running is candidate commit behind the scenes */
-    rc = dm_session_start(rp_ctx->dm_ctx, session->user_credentials, src, &backup);
+    rc = dm_session_start(rp_ctx->dm_ctx, session->user_credentials, src, session->options & SR_SESS_ENABLE_NACM, &backup);
     CHECK_RC_MSG_RETURN(rc, "Session start of temporary session failed");
 
     /* move datatrees & session ops -> backup */

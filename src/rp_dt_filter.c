@@ -26,8 +26,99 @@
 #include "rp_dt_filter.h"
 
 
+int rp_dt_nacm_filtering(dm_ctx_t *dm_ctx, const ac_ucred_t *user_credentials, struct lyd_node *data_tree,
+        struct lyd_node **result_p)
+{
+    int rc = SR_ERR_OK;
+    struct ly_set *nodeset = NULL;
+    bool backtracking = false;
+    nacm_ctx_t *nacm_ctx = NULL;
+    nacm_data_val_ctx_t *nacm_data_val_ctx = NULL;
+    nacm_action_t nacm_action = NACM_ACTION_PERMIT;
+    const char *rule_name = NULL, *rule_info = NULL;
+    struct lyd_node *result = data_tree, *node = NULL, *next = NULL;
+    char *xpath = NULL;
+
+    CHECK_NULL_ARG3(dm_ctx, user_credentials, result);
+
+    rc = dm_get_nacm_ctx(dm_ctx, &nacm_ctx);
+    CHECK_RC_MSG_GOTO(rc, cleanup, "Failed to get NACM context.");
+
+    if (NULL == nacm_ctx) {
+        goto cleanup;
+    }
+
+    /* start NACM data access validation */
+    rc = nacm_data_validation_start(nacm_ctx, user_credentials, data_tree->schema, &nacm_data_val_ctx);
+    CHECK_RC_MSG_GOTO(rc, cleanup, "Failed to start NACM data validation.");
+
+    node = data_tree;
+    while (NULL != node) {
+        if (false == backtracking) {
+            /* check read-access */
+            rc = nacm_check_data(nacm_data_val_ctx, NACM_ACCESS_READ, node, &nacm_action, &rule_name, &rule_info);
+            CHECK_RC_LOG_GOTO(rc, cleanup, "NACM data validation failed for node: %s.", node->schema->name);
+            if (NACM_ACTION_DENY == nacm_action) {
+                nacm_report_read_access_denied(user_credentials, node, rule_name, rule_info);
+                if (result == data_tree) {
+                    /* need to copy the input data tree */
+                    result = sr_dup_datatree(data_tree);
+                    CHECK_NULL_NOMEM_GOTO(result, rc, cleanup);
+                    /* find the corresponding node in the copy */
+                    xpath = lyd_path(node);
+                    CHECK_NULL_NOMEM_GOTO(xpath, rc, cleanup);
+                    nodeset = lyd_find_xpath(result, xpath);
+                    if (NULL == nodeset || 1 != nodeset->number) {
+                        SR_LOG_ERR("Failed to get the corresponding node in a data tree copy (xpath = %s).", xpath);
+                        rc = SR_ERR_INTERNAL;
+                        goto cleanup;
+                    }
+                    node = nodeset->set.d[0];
+                    ly_set_free(nodeset);
+                    nodeset = NULL;
+                    free(xpath);
+                    xpath = NULL;
+                }
+                /* remove this sub-tree */
+                if (node->next) {
+                    next = node->next;
+                } else {
+                    next = node->parent;
+                    backtracking = true;
+                }
+                lyd_free(node);
+                node = next;
+            } else {
+                if ((node->schema->nodetype & (LYS_LEAF | LYS_LEAFLIST | LYS_ANYDATA)) && node->child) {
+                    node = node->child;
+                } else if (node->next) {
+                    node = node->next;
+                } else {
+                    backtracking = true;
+                }
+            }
+        } else {
+            if (node->next) {
+                node = node->next;
+                backtracking = false;
+            } else {
+                node = node->parent;
+            }
+        }
+    }
+
+cleanup:
+    nacm_data_validation_stop(nacm_data_val_ctx);
+    if (SR_ERR_OK == rc) {
+        *result_p = result;
+    }
+    free(xpath);
+    ly_set_free(nodeset);
+    return rc;
+}
+
 int
-rp_dt_nacm_filtering(dm_ctx_t *dm_ctx, rp_session_t *rp_session, struct lyd_node *data_tree,
+rp_dt_nodes_nacm_filtering(dm_ctx_t *dm_ctx, const ac_ucred_t *user_credentials, struct lyd_node *data_tree,
         struct lyd_node **nodes, unsigned int *node_cnt)
 {
     int rc = SR_ERR_OK;
@@ -37,17 +128,17 @@ rp_dt_nacm_filtering(dm_ctx_t *dm_ctx, rp_session_t *rp_session, struct lyd_node
     nacm_action_t nacm_action = NACM_ACTION_PERMIT;
     const char *rule_name = NULL, *rule_info = NULL;
     struct lyd_node *node = NULL;
-    CHECK_NULL_ARG4(dm_ctx, rp_session, nodes, node_cnt);
+    CHECK_NULL_ARG4(dm_ctx, user_credentials, nodes, node_cnt);
 
     rc = dm_get_nacm_ctx(dm_ctx, &nacm_ctx);
     CHECK_RC_MSG_GOTO(rc, cleanup, "Failed to get NACM context.");
 
-    if (NULL == nacm_ctx || !(rp_session->options & SR_SESS_ENABLE_NACM)) {
+    if (NULL == nacm_ctx) {
         goto cleanup;
     }
 
     /* start NACM data access validation */
-    rc = nacm_data_validation_start(nacm_ctx, rp_session->user_credentials, data_tree->schema, &nacm_data_val_ctx);
+    rc = nacm_data_validation_start(nacm_ctx, user_credentials, data_tree->schema, &nacm_data_val_ctx);
     CHECK_RC_MSG_GOTO(rc, cleanup, "Failed to start NACM data validation.");
 
     /* check read permission for each node */
@@ -57,7 +148,7 @@ rp_dt_nacm_filtering(dm_ctx_t *dm_ctx, rp_session_t *rp_session, struct lyd_node
         rc = nacm_check_data(nacm_data_val_ctx, NACM_ACCESS_READ, node, &nacm_action, &rule_name, &rule_info);
         CHECK_RC_LOG_GOTO(rc, cleanup, "NACM data validation failed for node: %s.", node->schema->name);
         if (NACM_ACTION_DENY == nacm_action) {
-            nacm_report_read_access_denied(rp_session->user_credentials, node, rule_name, rule_info);
+            nacm_report_read_access_denied(user_credentials, node, rule_name, rule_info);
             nodes[i] = NULL; /* omit the node from the result */
         }
     }
@@ -133,12 +224,12 @@ rp_dt_cleanup_tree_pruning(rp_tree_pruning_ctx_t *pruning_ctx)
 }
 
 int
-rp_dt_init_tree_pruning(dm_ctx_t *dm_ctx, rp_session_t *rp_session, struct lyd_node *root, struct lyd_node *data_tree,
-        bool check_enabled, sr_tree_pruning_cb *pruning_cb, rp_tree_pruning_ctx_t **pruning_ctx_p)
+rp_dt_init_tree_pruning(dm_ctx_t *dm_ctx, const ac_ucred_t *user_credentials, bool enable_nacm, struct lyd_node *root,
+        struct lyd_node *data_tree, bool check_enabled, sr_tree_pruning_cb *pruning_cb, rp_tree_pruning_ctx_t **pruning_ctx_p)
 {
     int rc = SR_ERR_OK;
     rp_tree_pruning_ctx_t *pruning_ctx = NULL;
-    CHECK_NULL_ARG5(dm_ctx, rp_session, data_tree, pruning_cb, pruning_ctx_p);
+    CHECK_NULL_ARG5(dm_ctx, user_credentials, data_tree, pruning_cb, pruning_ctx_p);
 
     pruning_ctx = calloc(1, sizeof *pruning_ctx);
     CHECK_NULL_NOMEM_RETURN(pruning_ctx);
@@ -151,8 +242,8 @@ rp_dt_init_tree_pruning(dm_ctx_t *dm_ctx, rp_session_t *rp_session, struct lyd_n
     rc = dm_get_nacm_ctx(dm_ctx, &nacm_ctx);
     CHECK_RC_MSG_GOTO(rc, cleanup, "Failed to get NACM context.");
 
-    if (NULL != nacm_ctx && (rp_session->options & SR_SESS_ENABLE_NACM)) {
-        rc = nacm_data_validation_start(nacm_ctx, rp_session->user_credentials, data_tree->schema,
+    if (NULL != nacm_ctx && enable_nacm) {
+        rc = nacm_data_validation_start(nacm_ctx, user_credentials, data_tree->schema,
                 &pruning_ctx->nacm_data_val_ctx);
         CHECK_RC_MSG_GOTO(rc, cleanup, "Failed to start NACM data validation.");
         if (NULL != root) {
@@ -160,7 +251,7 @@ rp_dt_init_tree_pruning(dm_ctx_t *dm_ctx, rp_session_t *rp_session, struct lyd_n
                     &rule_name, &rule_info);
             CHECK_RC_LOG_GOTO(rc, cleanup, "NACM data validation failed for node: %s.", root->schema->name);
             if (NACM_ACTION_DENY == nacm_action) {
-                nacm_report_read_access_denied(rp_session->user_credentials, root, rule_name, rule_info);
+                nacm_report_read_access_denied(user_credentials, root, rule_name, rule_info);
                 rc = SR_ERR_UNAUTHORIZED;
                 goto cleanup;
             }

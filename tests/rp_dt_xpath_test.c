@@ -58,7 +58,7 @@ void rp_dt_validate_fail(void **state)
     int rc = 0;
     dm_ctx_t *ctx = *state;
     dm_session_t *session = NULL;
-    dm_session_start(ctx, NULL, SR_DS_STARTUP, &session);
+    dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &session);
 
     /* unknown model */
     rc = validate_node_wrapper(ctx, session, "/unknown-module:", NULL);
@@ -97,7 +97,7 @@ void rp_dt_validate_ok(void **state)
     int rc = 0;
     dm_ctx_t *ctx = *state;
     dm_session_t *session = NULL;
-    dm_session_start(ctx, NULL, SR_DS_STARTUP, &session);
+    dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &session);
 
     /* module */
     rc = validate_node_wrapper(ctx, session, "/example-module:*", NULL);
@@ -152,7 +152,7 @@ check_error_reporting(void **state)
     int rc = 0;
     dm_ctx_t *ctx = *state;
     dm_session_t *session = NULL;
-    dm_session_start(ctx, NULL, SR_DS_STARTUP, &session);
+    dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &session);
 
 
     rc = validate_node_wrapper(ctx, session, "/example-module:*", NULL);

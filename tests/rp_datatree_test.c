@@ -1284,7 +1284,7 @@ void get_node_test_found(void **state)
     dm_session_t *ses_ctx = NULL;
     struct lyd_node *data_tree = NULL;
     struct lyd_node *node = NULL;
-    dm_session_start(ctx, NULL, SR_DS_STARTUP, &ses_ctx);
+    dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &ses_ctx);
 
     /* Load from file */
     rc = dm_get_datatree(ctx, ses_ctx ,"example-module", &data_tree);
@@ -1333,7 +1333,7 @@ void get_nodes_test(void **state){
     dm_ctx_t *ctx = rp_ctx->dm_ctx;
     dm_session_t *ses_ctx = NULL;
     struct lyd_node *data_tree = NULL;
-    dm_session_start(ctx, NULL, SR_DS_STARTUP, &ses_ctx);
+    dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &ses_ctx);
     rc = dm_get_datatree(ctx, ses_ctx, "example-module", &data_tree);
     assert_int_equal(SR_ERR_OK, rc);
 
@@ -1364,7 +1364,7 @@ void get_node_test_not_found(void **state)
     dm_session_t *ses_ctx = NULL;
     struct lyd_node *data_tree = NULL;
     struct lyd_node *node = NULL;
-    dm_session_start(ctx, NULL, SR_DS_STARTUP, &ses_ctx);
+    dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &ses_ctx);
 
     /* Load from file */
     rc = dm_get_datatree(ctx, ses_ctx, "example-module", &data_tree);

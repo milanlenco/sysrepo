@@ -194,10 +194,12 @@ rp_dt_get_value(dm_ctx_t *dm_ctx, rp_session_t *rp_session, struct lyd_node *dat
         return rc;
     }
 
-    rc = rp_dt_nacm_filtering(dm_ctx, rp_session, data_tree, &node, &node_cnt);
-    CHECK_RC_MSG_RETURN(rc, "Failed to filter node by NACM read access.");
-    if (0 == node_cnt) {
-        return SR_ERR_NOT_FOUND;
+    if (rp_session->options & SR_SESS_ENABLE_NACM) {
+        rc = rp_dt_nodes_nacm_filtering(dm_ctx, rp_session->user_credentials, data_tree, &node, &node_cnt);
+        CHECK_RC_MSG_RETURN(rc, "Failed to filter node by NACM read access.");
+        if (0 == node_cnt) {
+            return SR_ERR_NOT_FOUND;
+        }
     }
 
     val = sr_calloc(sr_mem, 1, sizeof(*val));
@@ -236,11 +238,13 @@ rp_dt_get_values(dm_ctx_t *dm_ctx, rp_session_t *rp_session, struct lyd_node *da
         goto cleanup;
     }
 
-    rc = rp_dt_nacm_filtering(dm_ctx, rp_session, data_tree, nodes->set.d, &nodes->number);
-    CHECK_RC_MSG_GOTO(rc, cleanup, "Failed to filter nodes by NACM read access.");
-    if (0 == nodes->number) {
-        rc = SR_ERR_NOT_FOUND;
-        goto cleanup;
+    if (rp_session->options & SR_SESS_ENABLE_NACM) {
+        rc = rp_dt_nodes_nacm_filtering(dm_ctx, rp_session->user_credentials, data_tree, nodes->set.d, &nodes->number);
+        CHECK_RC_MSG_GOTO(rc, cleanup, "Failed to filter nodes by NACM read access.");
+        if (0 == nodes->number) {
+            rc = SR_ERR_NOT_FOUND;
+            goto cleanup;
+        }
     }
 
     rc = rp_dt_get_values_from_nodes(sr_mem, nodes, values, count);
@@ -274,7 +278,8 @@ rp_dt_get_subtree(dm_ctx_t *dm_ctx, rp_session_t *rp_session, struct lyd_node *d
         return rc;
     }
 
-    rc = rp_dt_init_tree_pruning(dm_ctx, rp_session, node, data_tree, check_enabled, &pruning_cb, &pruning_ctx);
+    rc = rp_dt_init_tree_pruning(dm_ctx, rp_session->user_credentials, rp_session->options & SR_SESS_ENABLE_NACM,
+            node, data_tree, check_enabled, &pruning_cb, &pruning_ctx);
     if (SR_ERR_UNAUTHORIZED == rc) {
         rc = SR_ERR_NOT_FOUND;
         goto cleanup;
@@ -324,7 +329,8 @@ rp_dt_get_subtree_chunk(dm_ctx_t *dm_ctx, rp_session_t *rp_session, struct lyd_n
         return rc;
     }
 
-    rc = rp_dt_init_tree_pruning(dm_ctx, rp_session, node, data_tree, check_enabled, &pruning_cb, &pruning_ctx);
+    rc = rp_dt_init_tree_pruning(dm_ctx, rp_session->user_credentials, rp_session->options & SR_SESS_ENABLE_NACM,
+            node, data_tree, check_enabled, &pruning_cb, &pruning_ctx);
     if (SR_ERR_UNAUTHORIZED == rc) {
         rc = SR_ERR_NOT_FOUND;
         goto cleanup;
@@ -384,7 +390,8 @@ rp_dt_get_subtrees(dm_ctx_t *dm_ctx, rp_session_t *rp_session, struct lyd_node *
         return rc;
     }
 
-    rc = rp_dt_init_tree_pruning(dm_ctx, rp_session, NULL, data_tree, check_enable, &pruning_cb, &pruning_ctx);
+    rc = rp_dt_init_tree_pruning(dm_ctx, rp_session->user_credentials, rp_session->options & SR_SESS_ENABLE_NACM,
+            NULL, data_tree, check_enable, &pruning_cb, &pruning_ctx);
     CHECK_RC_MSG_GOTO(rc, cleanup, "Failed to initialize sysrepo tree pruning.");
 
     rc = sr_nodes_to_trees(nodes, sr_mem, pruning_cb, (void *)pruning_ctx, subtrees, count);
@@ -427,7 +434,8 @@ rp_dt_get_subtrees_chunks(dm_ctx_t *dm_ctx, rp_session_t *rp_session, struct lyd
         return rc;
     }
 
-    rc = rp_dt_init_tree_pruning(dm_ctx, rp_session, NULL, data_tree, check_enable, &pruning_cb, &pruning_ctx);
+    rc = rp_dt_init_tree_pruning(dm_ctx, rp_session->user_credentials, rp_session->options & SR_SESS_ENABLE_NACM,
+            NULL, data_tree, check_enable, &pruning_cb, &pruning_ctx);
     CHECK_RC_MSG_GOTO(rc, cleanup, "Failed to initialize sysrepo tree pruning.");
 
     rc = sr_nodes_to_tree_chunks(nodes, slice_offset, slice_width, child_limit, depth_limit, sr_mem,

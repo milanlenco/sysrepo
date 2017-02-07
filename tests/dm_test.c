@@ -94,7 +94,7 @@ void dm_get_data_tree(void **state)
     rc = dm_init(NULL, NULL, NULL, CM_MODE_LOCAL, TEST_SCHEMA_SEARCH_DIR, TEST_DATA_SEARCH_DIR, &ctx);
     assert_int_equal(SR_ERR_OK, rc);
 
-    dm_session_start(ctx, NULL, SR_DS_STARTUP, &ses_ctx);
+    dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &ses_ctx);
     /* Load from file */
     assert_int_equal(SR_ERR_OK, dm_get_datatree(ctx, ses_ctx ,"example-module", &data_tree));
     /* Get from avl tree */
@@ -122,7 +122,7 @@ dm_list_schema_test(void **state)
     rc = dm_init(NULL, NULL, NULL, CM_MODE_LOCAL, TEST_SCHEMA_SEARCH_DIR, TEST_DATA_SEARCH_DIR, &ctx);
     assert_int_equal(SR_ERR_OK, rc);
 
-    rc = dm_session_start(ctx, NULL, SR_DS_STARTUP, &ses_ctx);
+    rc = dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &ses_ctx);
     assert_int_equal(SR_ERR_OK, rc);
 
     rc = dm_list_schemas(ctx, ses_ctx, &schemas, &count);
@@ -257,7 +257,7 @@ dm_validate_data_trees_test(void **state)
     rc = dm_init(NULL, NULL, NULL, CM_MODE_LOCAL, TEST_SCHEMA_SEARCH_DIR, TEST_DATA_SEARCH_DIR, &ctx);
     assert_int_equal(SR_ERR_OK, rc);
 
-    rc = dm_session_start(ctx, NULL, SR_DS_STARTUP, &ses_ctx);
+    rc = dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &ses_ctx);
     assert_int_equal(SR_ERR_OK, rc);
 
     /* test validation with no data trees copied */
@@ -302,7 +302,7 @@ dm_discard_changes_test(void **state)
     rc = dm_init(NULL, NULL, NULL, CM_MODE_LOCAL, TEST_SCHEMA_SEARCH_DIR, TEST_DATA_SEARCH_DIR, &ctx);
     assert_int_equal(SR_ERR_OK, rc);
 
-    rc = dm_session_start(ctx, NULL, SR_DS_STARTUP, &ses_ctx);
+    rc = dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &ses_ctx);
     assert_int_equal(SR_ERR_OK, rc);
 
     rc = dm_get_data_info(ctx, ses_ctx, "test-module", &info);
@@ -353,7 +353,7 @@ dm_add_operation_test(void **state)
     rc = dm_init(NULL, NULL, NULL, CM_MODE_LOCAL, TEST_SCHEMA_SEARCH_DIR, TEST_DATA_SEARCH_DIR, &ctx);
     assert_int_equal(SR_ERR_OK, rc);
 
-    dm_session_start(ctx, NULL, SR_DS_STARTUP, &ses_ctx);
+    dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &ses_ctx);
 
     rc = dm_add_del_operation(ses_ctx, NULL, SR_EDIT_DEFAULT);
     assert_int_equal(SR_ERR_INVAL_ARG, rc);
@@ -401,8 +401,8 @@ dm_locking_test(void **state)
    rc = dm_init(NULL, NULL, NULL, CM_MODE_LOCAL, TEST_SCHEMA_SEARCH_DIR, TEST_DATA_SEARCH_DIR, &ctx);
    assert_int_equal(SR_ERR_OK, rc);
 
-   dm_session_start(ctx, NULL, SR_DS_STARTUP, &sessionA);
-   dm_session_start(ctx, NULL, SR_DS_STARTUP, &sessionB);
+   dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &sessionA);
+   dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &sessionB);
 
    rc = dm_lock_module(ctx, sessionA, "example-module");
    assert_int_equal(SR_ERR_OK, rc);
@@ -430,7 +430,7 @@ dm_copy_module_test(void **state)
    rc = dm_init(NULL, NULL, NULL, CM_MODE_LOCAL, TEST_SCHEMA_SEARCH_DIR, TEST_DATA_SEARCH_DIR, &ctx);
    assert_int_equal(SR_ERR_OK, rc);
 
-   rc = dm_session_start(ctx, NULL, SR_DS_STARTUP, &sessionA);
+   rc = dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &sessionA);
    assert_int_equal(SR_ERR_OK, rc);
 
    rc = dm_copy_module(ctx, sessionA, "example-module", SR_DS_STARTUP, SR_DS_RUNNING, NULL);
@@ -465,7 +465,7 @@ dm_rpc_test(void **state)
     rc = dm_init(NULL, NULL, NULL, CM_MODE_LOCAL, TEST_SCHEMA_SEARCH_DIR, TEST_DATA_SEARCH_DIR, &ctx);
     assert_int_equal(SR_ERR_OK, rc);
 
-    rc = dm_session_start(ctx, NULL, SR_DS_STARTUP, &session);
+    rc = dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &session);
     assert_int_equal(SR_ERR_OK, rc);
 
     /* load test-module */
@@ -544,7 +544,7 @@ dm_state_data_test(void **state)
     rc = dm_init(NULL, NULL, NULL, CM_MODE_LOCAL, TEST_SCHEMA_SEARCH_DIR, TEST_DATA_SEARCH_DIR, &ctx);
     assert_int_equal(SR_ERR_OK, rc);
 
-    rc = dm_session_start(ctx, NULL, SR_DS_STARTUP, &session);
+    rc = dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &session);
     assert_int_equal(SR_ERR_OK, rc);
 
     rc = dm_has_state_data(ctx, "ietf-ip", &has_state_data);
@@ -586,7 +586,7 @@ dm_event_notif_test(void **state)
     rc = dm_init(NULL, NULL, NULL, CM_MODE_LOCAL, TEST_SCHEMA_SEARCH_DIR, TEST_DATA_SEARCH_DIR, &ctx);
     assert_int_equal(SR_ERR_OK, rc);
 
-    rc = dm_session_start(ctx, NULL, SR_DS_STARTUP, &session);
+    rc = dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &session);
     assert_int_equal(SR_ERR_OK, rc);
 
     /* load test-module */
@@ -730,7 +730,7 @@ dm_event_notif_parse_test(void **state)
     rc = dm_init(NULL, NULL, NULL, CM_MODE_LOCAL, TEST_SCHEMA_SEARCH_DIR, TEST_DATA_SEARCH_DIR, &ctx);
     assert_int_equal(SR_ERR_OK, rc);
 
-    rc = dm_session_start(ctx, NULL, SR_DS_STARTUP, &session);
+    rc = dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &session);
     assert_int_equal(SR_ERR_OK, rc);
 
     /* load test-module */
@@ -817,7 +817,7 @@ dm_action_test(void **state)
     rc = dm_init(NULL, NULL, NULL, CM_MODE_LOCAL, TEST_SCHEMA_SEARCH_DIR, TEST_DATA_SEARCH_DIR, &ctx);
     assert_int_equal(SR_ERR_OK, rc);
 
-    rc = dm_session_start(ctx, NULL, SR_DS_STARTUP, &session);
+    rc = dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &session);
     assert_int_equal(SR_ERR_OK, rc);
 
     /* load test-module */
@@ -1036,7 +1036,7 @@ dm_schema_node_xpath_hash(void **state)
     rc = dm_init(NULL, NULL, NULL, CM_MODE_LOCAL, TEST_SCHEMA_SEARCH_DIR, TEST_DATA_SEARCH_DIR, &ctx);
     assert_int_equal(SR_ERR_OK, rc);
 
-    dm_session_start(ctx, NULL, SR_DS_STARTUP, &ses_ctx);
+    dm_session_start(ctx, NULL, SR_DS_STARTUP, false, &ses_ctx);
     assert_int_equal(SR_ERR_OK, dm_get_datatree(ctx, ses_ctx, "ietf-interfaces", &data_tree));
 
     node = get_single_node(data_tree, "/ietf-interfaces:interfaces");

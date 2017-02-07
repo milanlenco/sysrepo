@@ -41,6 +41,7 @@
 #include "notification_processor.h"
 #include "persistence_manager.h"
 #include "rp_dt_edit.h"
+#include "rp_dt_filter.h"
 #include "module_dependencies.h"
 #include "nacm.h"
 
@@ -86,6 +87,7 @@ typedef struct dm_session_s {
     dm_ctx_t *dm_ctx;                   /**< dm_ctx where the session belongs to */
     sr_datastore_t datastore;           /**< datastore to which the session is tied */
     const ac_ucred_t *user_credentials; /**< credentials of the user who this session belongs to */
+    bool enable_nacm;                   /**< flag if the NACM is enabled for this session */
     sr_btree_t **session_modules;       /**< array of binary trees holding session copies of data models for each datastore */
     dm_sess_op_t **operations;          /**< array of list of operations performed in this session */
     size_t *oper_count;                 /**< array of number of performed operation */
@@ -2060,7 +2062,8 @@ dm_cleanup(dm_ctx_t *dm_ctx)
 }
 
 int
-dm_session_start(dm_ctx_t *dm_ctx, const ac_ucred_t *user_credentials, const sr_datastore_t ds, dm_session_t **dm_session_ctx)
+dm_session_start(dm_ctx_t *dm_ctx, const ac_ucred_t *user_credentials, const sr_datastore_t ds, bool enable_nacm,
+        dm_session_t **dm_session_ctx)
 {
     CHECK_NULL_ARG(dm_session_ctx);
 
@@ -2070,6 +2073,7 @@ dm_session_start(dm_ctx_t *dm_ctx, const ac_ucred_t *user_credentials, const sr_
     session_ctx->dm_ctx = dm_ctx;
     session_ctx->user_credentials = user_credentials;
     session_ctx->datastore = ds;
+    session_ctx->enable_nacm = enable_nacm;
 
     int rc = SR_ERR_OK;
     session_ctx->session_modules = calloc(DM_DATASTORE_COUNT, sizeof(*session_ctx->session_modules));
@@ -3692,7 +3696,8 @@ dm_commit_prepare_context(dm_ctx_t *dm_ctx, dm_session_t *session, dm_commit_con
     CHECK_NULL_NOMEM_GOTO(c_ctx->existed, rc, cleanup);
 
     /* create commit session */
-    rc = dm_session_start(dm_ctx, session->user_credentials, SR_DS_CANDIDATE == session->datastore ? SR_DS_RUNNING : session->datastore, &c_ctx->session);
+    rc = dm_session_start(dm_ctx, session->user_credentials, SR_DS_CANDIDATE == session->datastore ? SR_DS_RUNNING : session->datastore,
+            session->enable_nacm, &c_ctx->session);
     CHECK_RC_MSG_GOTO(rc, cleanup, "Commit session initialization failed");
 
     rc = sr_list_init(&c_ctx->up_to_date_models);
@@ -4822,14 +4827,15 @@ dm_remove_non_matching_diff(dm_model_subscription_t *ms, const np_subscription_t
  */
 static int
 dm_create_difflist_for_enabled_notif(dm_ctx_t *dm_ctx, const ac_ucred_t *user_credentials, dm_session_t *src_session,
-        const char *module_name, const np_subscription_t *subscription, dm_commit_context_t *c_ctx) {
+        const char *module_name, const np_subscription_t *subscription, dm_commit_context_t *c_ctx)
+{
 
     CHECK_NULL_ARG5(dm_ctx, src_session, module_name, subscription, c_ctx);
 
     int rc = SR_ERR_OK;
     dm_model_subscription_t *ms = NULL;
 
-    rc = dm_session_start(dm_ctx, user_credentials, SR_DS_RUNNING, &c_ctx->session);
+    rc = dm_session_start(dm_ctx, user_credentials, SR_DS_RUNNING, false, &c_ctx->session);
     CHECK_RC_MSG_RETURN(rc, "Start session failed");
 
     rc = dm_copy_session_tree(dm_ctx, src_session, c_ctx->session, module_name);
@@ -4931,7 +4937,9 @@ dm_copy_config(dm_ctx_t *dm_ctx, dm_session_t *session, const sr_list_t *module_
     size_t opened_files = 0;
     char *file_name = NULL;
     int *fds = NULL;
+    struct lyd_node *data_tree = NULL;
     dm_commit_context_t *c_ctx = NULL;
+    struct lyd_node *dup = NULL;
 
     if (src == dst || 0 == module_names->count) {
         return rc;
@@ -4953,7 +4961,8 @@ dm_copy_config(dm_ctx_t *dm_ctx, dm_session_t *session, const sr_list_t *module_
 
     /* create source session */
     if (SR_DS_CANDIDATE != src) {
-        rc = dm_session_start(dm_ctx, (session != NULL ? session->user_credentials : NULL), src, &src_session);
+        rc = dm_session_start(dm_ctx, (session != NULL ? session->user_credentials : NULL), src,
+                                      (session != NULL ? session->enable_nacm : false), &src_session);
         CHECK_RC_MSG_GOTO(rc, cleanup, "Creating of temporary session failed");
     } else {
         src_session = session;
@@ -4970,7 +4979,8 @@ dm_copy_config(dm_ctx_t *dm_ctx, dm_session_t *session, const sr_list_t *module_
 
     /* create destination session */
     if (SR_DS_CANDIDATE != dst) {
-        rc = dm_session_start(dm_ctx, (session != NULL ? session->user_credentials : NULL), dst, &dst_session);
+        rc = dm_session_start(dm_ctx, (session != NULL ? session->user_credentials : NULL), dst,
+                                      (session != NULL ? session->enable_nacm : false), &dst_session);
         CHECK_RC_MSG_GOTO(rc, cleanup, "Creating of temporary session failed");
     } else {
         dst_session = session;
@@ -5004,7 +5014,8 @@ dm_copy_config(dm_ctx_t *dm_ctx, dm_session_t *session, const sr_list_t *module_
 
         if (NULL != subscription && 0 == i) {
             /* subscription is supposed to be used when only one module/subtree is copied */
-            rc = dm_create_difflist_for_enabled_notif(dm_ctx, session->user_credentials, src_session, module_name, subscription, c_ctx);
+            rc = dm_create_difflist_for_enabled_notif(dm_ctx, session->user_credentials, src_session,
+                    module_name, subscription, c_ctx);
             CHECK_RC_MSG_GOTO(rc, cleanup, "Failed to create difflist");
         }
 
@@ -5033,9 +5044,18 @@ dm_copy_config(dm_ctx_t *dm_ctx, dm_session_t *session, const sr_list_t *module_
     int ret = 0;
     for (size_t i = 0; i < module_names->count; i++) {
         module_name = module_names->data[i];
+
+        if (NULL != session && session->enable_nacm) {
+            /* filter out nodes from the data tree that the user doesn't have read access to by NACM */
+            rc = rp_dt_nacm_filtering(dm_ctx, session->user_credentials, src_infos[i]->node, &data_tree);
+            CHECK_RC_MSG_GOTO(rc, cleanup, "NACM filtering has failed");
+        } else {
+            data_tree = src_infos[i]->node;
+        }
+
         if (SR_DS_CANDIDATE != dst) {
             /* write dest file, dst is either startup or running*/
-            if (0 != lyd_print_fd(fds[i], src_infos[i]->node, LYD_XML, LYP_WITHSIBLINGS | LYP_FORMAT)) {
+            if (0 != lyd_print_fd(fds[i], data_tree, LYD_XML, LYP_WITHSIBLINGS | LYP_FORMAT)) {
                 SR_LOG_ERR("Copy of module %s failed", module_name);
                 rc = SR_ERR_INTERNAL;
             }
@@ -5045,9 +5065,15 @@ dm_copy_config(dm_ctx_t *dm_ctx, dm_session_t *session, const sr_list_t *module_
                         (ly_errno != LY_SUCCESS) ? ly_errmsg() : sr_strerror_safe(errno));
                 rc = SR_ERR_INTERNAL;
             }
+            if (NULL != data_tree && src_infos[i]->node != data_tree) {
+                lyd_free_withsiblings(data_tree);
+            }
         } else {
             /* copy data tree into candidate session */
-            struct lyd_node *dup = sr_dup_datatree(src_infos[i]->node);
+            dup = data_tree;
+            if (NULL != dup && src_infos[i]->node == dup) {
+                dup = sr_dup_datatree(src_infos[i]->node);
+            }
             dm_data_info_t *di_tmp = NULL;
             if (NULL != src_infos[i]->node && NULL == dup) {
                 SR_LOG_ERR("Duplication of data tree %s failed", src_infos[i]->schema->module->name);
@@ -5060,6 +5086,7 @@ dm_copy_config(dm_ctx_t *dm_ctx, dm_session_t *session, const sr_list_t *module_
             lyd_free_withsiblings(di_tmp->node);
             di_tmp->node = dup;
             di_tmp->modified = true;
+            dup = NULL;
         }
     }
 
@@ -5084,6 +5111,9 @@ cleanup:
     }
     for (size_t i = 0; i < opened_files; i++) {
         close(fds[i]);
+    }
+    if (NULL != dup) {
+        lyd_free_withsiblings(dup);
     }
     free(fds);
     free(src_infos);
@@ -5238,7 +5268,7 @@ dm_copy_subtree_startup_running(dm_ctx_t *ctx, dm_session_t *session, const char
     dm_data_info_t *candidate_info = NULL;
     struct lyd_node *node = NULL, *parent = NULL;
 
-    rc = dm_session_start(ctx, session->user_credentials, SR_DS_STARTUP, &tmp_session);
+    rc = dm_session_start(ctx, session->user_credentials, SR_DS_STARTUP, session->enable_nacm, &tmp_session);
     CHECK_RC_MSG_RETURN(rc, "Failed to start a temporary session");
 
     /* select nodes by xpath from startup */

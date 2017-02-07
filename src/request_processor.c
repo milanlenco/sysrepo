@@ -2954,7 +2954,7 @@ rp_event_notif_req_process(const rp_ctx_t *rp_ctx, const rp_session_t *session, 
     if (NULL != session) {
         dm_session = session->dm_session;
     } else {
-        rc = dm_session_start(rp_ctx->dm_ctx, NULL, SR_DS_RUNNING, &dm_session);
+        rc = dm_session_start(rp_ctx->dm_ctx, NULL, SR_DS_RUNNING, false, &dm_session);
         CHECK_RC_MSG_GOTO(rc, finalize, "Failed to create temporary dm_session");
     }
 
@@ -3952,7 +3952,7 @@ rp_session_start(const rp_ctx_t *rp_ctx, const uint32_t session_id, const ac_ucr
     rc = ac_session_init(rp_ctx->ac_ctx, user_credentials, &session->ac_session);
     CHECK_RC_LOG_GOTO(rc, cleanup, "Access Control session init failed for session id=%"PRIu32".", session_id);
 
-    rc = dm_session_start(rp_ctx->dm_ctx, user_credentials, datastore, &session->dm_session);
+    rc = dm_session_start(rp_ctx->dm_ctx, user_credentials, datastore, session_options & SR_SESS_ENABLE_NACM, &session->dm_session);
     CHECK_RC_LOG_GOTO(rc, cleanup, "Init of dm_session failed for session id=%"PRIu32".", session_id);
 
     *session_p = session;

@@ -267,10 +267,12 @@ void dm_cleanup(dm_ctx_t *dm_ctx);
  * @param [in] dm_ctx
  * @param [in] user_credentials credentials of the user who this session belongs to
  * @param [in] ds - datastore to which the session is tied.
+ * @param [in] enable_nacm - TRUE if the NETCONF access control is enabled for this session
  * @param [out] dm_session_ctx
  * @return Error code (SR_ERR_OK on success)
  */
-int dm_session_start(dm_ctx_t *dm_ctx, const ac_ucred_t *user_credentials, const sr_datastore_t ds, dm_session_t **dm_session_ctx);
+int dm_session_start(dm_ctx_t *dm_ctx, const ac_ucred_t *user_credentials, const sr_datastore_t ds, bool enable_nacm,
+        dm_session_t **dm_session_ctx);
 
 /**
  * @brief Frees resources allocated for the session.

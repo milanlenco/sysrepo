@@ -136,10 +136,12 @@ rp_dt_find_nodes_with_opts(dm_ctx_t *dm_ctx, rp_session_t *rp_session, rp_dt_get
         }
         get_items_ctx->offset = offset;
 
-        /* filter nodes by read access */
-        rc = rp_dt_nacm_filtering(dm_ctx, rp_session, data_tree, get_items_ctx->nodes->set.d,
-                &get_items_ctx->nodes->number);
-        CHECK_RC_MSG_RETURN(rc, "Failed to filter nodes by NACM read access.");
+        if (rp_session->options & SR_SESS_ENABLE_NACM) {
+            /* filter nodes by read access */
+            rc = rp_dt_nodes_nacm_filtering(dm_ctx, rp_session->user_credentials, data_tree, get_items_ctx->nodes->set.d,
+                    &get_items_ctx->nodes->number);
+            CHECK_RC_MSG_RETURN(rc, "Failed to filter nodes by NACM read access.");
+        }
 
         SR_LOG_DBG_MSG("Cache miss in get_nodes_with_opts");
 
